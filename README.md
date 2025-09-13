@@ -3,14 +3,16 @@
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-- [Features](#features)
-- [Database Structure](#database-structure)
-- [Setup](#setup)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+- [**Data-Driven Trading Strategy Research on FIFA Market**](#data-driven-trading-strategy-research-on-fifa-market)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+    - [6 Parts of Project:](#6-parts-of-project)
+  - [Features](#features)
+  - [Database Structure](#database-structure)
+  - [Setup](#setup)
+  - [Usage](#usage)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ---
 
@@ -19,6 +21,14 @@
 Briefly describe your project:
 
 > This project collects and analyzes FIFA Ultimate Team (FUT) player market data to research and test trading strategies. It stores player stats, prices, playstyles, and historical trends in a PostgreSQL database.
+
+### 6 Parts of Project:
+* Data Scraping
+* Feature Engineering
+* ML Model Training
+* Strategy Design
+* Backtesting & Simulation
+* Live Execution
 
 ---
 
