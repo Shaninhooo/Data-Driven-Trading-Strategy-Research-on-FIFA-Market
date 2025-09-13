@@ -75,7 +75,7 @@ Explain how to set up the project locally:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/yourusername/fifa-market-trading.git
+   git clone https://github.com/Shaninhooo/Data-Driven-Trading-Strategy-Research-on-FIFA-Market.git
    ```
 2. Create a `.env` file with your PostgreSQL credentials:
 
