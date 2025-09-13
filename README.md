@@ -32,7 +32,9 @@ Briefly describe your project:
 ---
 
 ### Features
-
+![Players Database](png/FUTBINplayers.png)
+![Player Details](png/playerdetails.png)
+![Player Value](png/playervalue.png)
 * Stores player attributes, stats, and historical price data.
 * Tracks player playstyles and roles.
 * Maintains pace, shooting, passing, dribbling, defending, and physical statistics.
