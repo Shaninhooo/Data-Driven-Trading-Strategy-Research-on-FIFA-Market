@@ -1,0 +1,118 @@
+---
+
+# Project Title
+
+**Data-Driven Trading Strategy Research on FIFA Market**
+
+---
+
+## Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [Overview](#overview)
+- [Features](#features)
+- [Database Structure](#database-structure)
+- [Setup](#setup)
+- [Usage](#usage)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Overview
+
+Briefly describe your project:
+
+> This project collects and analyzes FIFA Ultimate Team (FUT) player market data to research and test trading strategies. It stores player stats, prices, playstyles, and historical trends in a PostgreSQL database.
+
+---
+
+## Features
+
+* Stores player attributes, stats, and historical price data.
+* Tracks player playstyles and roles.
+* Maintains pace, shooting, passing, dribbling, defending, and physical statistics.
+* Supports historical tracking of player market values (PC and console).
+
+---
+
+## Database Structure
+
+Describe your database tables:
+
+* **players** – Basic player info (name, rating, height, acceleration, etc.)
+* **price\_history** – Tracks PC and console prices over time.
+* **player\_playstyles** – Stores each player’s playstyle(s) and level.
+* **player\_roles** – Stores positions and roles for each player.
+* **player\_pace\_stats** – Pace-specific stats.
+* **player\_shooting\_stats** – Shooting-specific stats.
+* **player\_passing\_stats** – Passing-specific stats.
+* **player\_dribbling\_stats** – Dribbling-specific stats.
+* **player\_defending\_stats** – Defending-specific stats.
+* **player\_physical\_stats** – Physical stats.
+
+You can even include a **diagram** of the tables with relationships if you want.
+
+---
+
+## Setup
+
+Explain how to set up the project locally:
+
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/yourusername/fifa-market-trading.git
+   ```
+2. Create a `.env` file with your PostgreSQL credentials:
+
+   ```env
+   DB_NAME=your_db_name
+   DB_USER=your_username
+   DB_PASSWORD=your_password
+   DB_HOST=localhost
+   DB_PORT=5432
+   ```
+3. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Run the Python script to initialize the database tables:
+
+   ```bash
+   python postgresConnect.py
+   ```
+
+---
+
+## Usage
+
+Explain how someone can use your database or scripts:
+
+* Insert new player data.
+* Query historical price trends.
+* Analyze player statistics for trading strategies.
+
+Example:
+
+```python
+cur.execute("SELECT * FROM price_history WHERE player_id = 1;")
+```
+
+---
+
+## Contributing
+
+> Optional section for collaborators.
+
+* Fork the repo, create a branch, submit a pull request.
+
+---
+
+## License
+
+> Optional, but recommended (MIT, Apache, etc.)
+
+---
+
