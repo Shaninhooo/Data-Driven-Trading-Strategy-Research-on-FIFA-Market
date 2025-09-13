@@ -6,9 +6,15 @@
 - [**Data-Driven Trading Strategy Research on FIFA Market**](#data-driven-trading-strategy-research-on-fifa-market)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
-    - [6 Parts of Project:](#6-parts-of-project)
-  - [Features](#features)
-  - [Database Structure](#database-structure)
+  - [6 Parts of Project](#6-parts-of-project)
+    - [Data Scraping](#data-scraping)
+      - [Features](#features)
+      - [Database Structure](#database-structure)
+    - [Feature Engineering](#feature-engineering)
+    - [ML Model Training](#ml-model-training)
+    - [Strategy Design](#strategy-design)
+    - [Backtesting \& Simulation](#backtesting--simulation)
+    - [Live Execution](#live-execution)
   - [Setup](#setup)
   - [Usage](#usage)
   - [Contributing](#contributing)
@@ -22,17 +28,12 @@ Briefly describe your project:
 
 > This project collects and analyzes FIFA Ultimate Team (FUT) player market data to research and test trading strategies. It stores player stats, prices, playstyles, and historical trends in a PostgreSQL database.
 
-### 6 Parts of Project:
-* Data Scraping
-* Feature Engineering
-* ML Model Training
-* Strategy Design
-* Backtesting & Simulation
-* Live Execution
+## 6 Parts of Project
+### Data Scraping
 
 ---
 
-## Features
+#### Features
 
 * Stores player attributes, stats, and historical price data.
 * Tracks player playstyles and roles.
@@ -41,7 +42,7 @@ Briefly describe your project:
 
 ---
 
-## Database Structure
+#### Database Structure
 
 Describe your database tables:
 
@@ -59,6 +60,13 @@ Describe your database tables:
 You can even include a **diagram** of the tables with relationships if you want.
 
 ---
+
+### Feature Engineering
+### ML Model Training
+### Strategy Design
+### Backtesting & Simulation
+### Live Execution
+
 
 ## Setup
 
