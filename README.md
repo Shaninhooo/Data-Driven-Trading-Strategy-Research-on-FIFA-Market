@@ -42,7 +42,7 @@ Briefly describe your project:
 
 ### Database Structure
 
-Describe your database tables:
+Database tables:
 
 * **players** – Basic player info (name, rating, height, acceleration, etc.)
 * **price\_history** – Tracks PC and console prices over time.
@@ -55,7 +55,7 @@ Describe your database tables:
 * **player\_defending\_stats** – Defending-specific stats.
 * **player\_physical\_stats** – Physical stats.
 
-You can even include a **diagram** of the tables with relationships if you want.
+![Diagram](png/Untitled(9).png)
 
 ---
 
