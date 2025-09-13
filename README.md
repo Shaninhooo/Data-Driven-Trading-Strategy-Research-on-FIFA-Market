@@ -1,10 +1,5 @@
----
 
-# Project Title
-
-**Data-Driven Trading Strategy Research on FIFA Market**
-
----
+# **Data-Driven Trading Strategy Research on FIFA Market**
 
 ## Table of Contents
 
