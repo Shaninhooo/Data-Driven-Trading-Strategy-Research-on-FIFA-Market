@@ -1,6 +1,7 @@
 import psycopg
 from dotenv import load_dotenv
 import os
+export
 
 load_dotenv()
 
@@ -23,6 +24,9 @@ def initPlayerTable():
             name VARCHAR(50) NOT NULL,
             game INT,
             version VARCHAR(20),
+            nationality VARCHAR(20),
+            league VARCHAR(20),
+            club VARCHAR(20),
             rating INT,
             weak_foot INT,
             skill_move INT,
@@ -32,24 +36,12 @@ def initPlayerTable():
         )
     """)
 
-    # Create Value History
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS price_history (
-            player_id INT REFERENCES players(id) ON DELETE CASCADE,
-            pc_value INT,
-            console_value INT,
-            date DATE,
-            PRIMARY KEY(player_id, date)
-        )
-    """)
-
     # Create Player Playstyle Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS player_playstyles (
             player_id INT REFERENCES players(id) ON DELETE CASCADE,
             playstyle_name VARCHAR(50) NOT NULL,
-            category VARCHAR(50) NOT NULL, 
-            level SMALLINT DEFAULT 1,
+            plus BOOLEAN NOT NULL DEFAULT FALSE,
             PRIMARY KEY(player_id, playstyle_name)
         )
     """)
@@ -148,13 +140,63 @@ def initPlayerTable():
         )
     """)
 
+    # Create Value History
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS price_history (
+            player_id INT REFERENCES players(id) ON DELETE CASCADE,
+            pc_value INT,
+            console_value INT,
+            date_time  TIMESTAMP NOT NULL,
+            PRIMARY KEY(player_id, date_time)
+        )
+    """)
+
+    # Create Recurring Events Table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS recurring_events (
+            id SERIAL PRIMARY KEY,
+            event_name TEXT NOT NULL,
+            frequency TEXT NOT NULL,
+            day_of_week INT,         
+            time_of_day TIME         
+        )
+    """)
+
+    # Create Unqiue Events Table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS unique_events (
+            id SERIAL PRIMARY KEY,
+            event_name TEXT NOT NULL,
+            version VARCHAR(20),
+            start_datetime  TIMESTAMP NOT NULL,
+            end_datetime    TIMESTAMP NOT NULL
+        )
+    """)
+
     print("Tables Initialized...")
     conn.commit()
+    cur.close()
+    conn.close()
 
-try:
-    initPlayerTable()
-except Exception as e:
-    print("Error initializing tables:", e)
-    conn.rollback()
-cur.close()
-conn.close()
+def addPricetoDatabase(conn, player_id, chart_data):
+    # Prepare list of tuples for insertion
+    values = []
+    for point in chart_data:
+        pc_value = point['y'] if point['series_name'] == 'PC' else None
+        console_value = point['y'] if point['series_name'] == 'Console' else None
+        values.append((player_id, pc_value, console_value, point['x']))
+
+    # Insert using ON CONFLICT to avoid duplicates
+    sql = """
+    INSERT INTO price_history (player_id, pc_value, console_value, date_time)
+    VALUES %s
+    ON CONFLICT (player_id, date_time)
+    DO UPDATE SET
+        pc_value = EXCLUDED.pc_value,
+        console_value = EXCLUDED.console_value
+    """
+    with conn.cursor() as cur:
+        execute_values(cur, sql, values)
+    conn.commit()
+
+def addPlayertoDatabase(conn, player_id):
