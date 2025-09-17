@@ -1,8 +1,8 @@
 import asyncio
-from playwright.async_api import async_playwright
 import requests
 from bs4 import BeautifulSoup
 import datetime
+from pyppeteer import launch
 import random
 from collections import defaultdict
 from unidecode import unidecode
@@ -11,8 +11,10 @@ import pytz
 import aiohttp
 import psutil
 import json
+import os
 
 BASE_URL = "https://www.futbin.com"
+CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -20,121 +22,133 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+def collect_all_hrefs(game_num, version):
+    hrefs = set()
+    href_lines = 0
+    # Load existing hrefs from file
+    if os.path.exists(f"{version}_hrefs.txt"):
+        with open(f"{version}_hrefs.txt", "r", encoding="utf-8") as f:
+            for line in f:
+                hrefs.add(line.strip())
+                href_lines += 1
 
-BASE_URL = "https://www.futbin.com"
+    completed_pages = href_lines // 30  # integer division
+    page_num = 1 + completed_pages
+    new_hrefs = 0
 
-async def collect_all_hrefs(game_num: str, version="gold_rare"):
-    hrefs = []
-    page_num = 1
+    while True:
+        url = f"{BASE_URL}/{game_num}/players?page={page_num}&version={version}"
+        print(f"[Page {page_num}] Fetching {url}")
 
-    async with async_playwright() as p:
-        # 🔹 You can switch firefox → chromium if needed
-        browser = await p.firefox.launch(headless=True)
-        page = await browser.new_page()
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code != 200:
+            print(f"Failed to fetch page {page_num}")
+            break
 
-        while True:
-            url = f"{BASE_URL}/{game_num}/players?page={page_num}&version={version}"
-            print(f"[Page {page_num}] Fetching {url}")
+        soup = BeautifulSoup(response.text, "html.parser")
+        rows = soup.find_all("tr", class_="player-row")
 
-            try:
-                await page.goto(url, wait_until="networkidle", timeout=60000)
-                await page.wait_for_selector("tr.player-row", timeout=30000)
+        if not rows:
+            print(f"No player rows found, stopping at page {page_num}")
+            break
 
-                content = await page.content()
-                soup = BeautifulSoup(content, "html.parser")
-                rows = soup.find_all("tr", class_="player-row")
+        page_new_hrefs = 0
+        for row in rows:
+            name_tag = row.find("a", class_="table-player-name")
+            if name_tag and "href" in name_tag.attrs:
+                href = name_tag["href"]
+                if href not in hrefs:
+                    hrefs.add(href)
+                    page_new_hrefs += 1
+                    new_hrefs += 1
 
-                if not rows:
-                    print(f"No player rows found, stopping at page {page_num}")
-                    break
+        if page_new_hrefs == 0:
+            print(f"No new hrefs found on page {page_num}, stopping.")
+            break
 
-                for row in rows:
-                    name_tag = row.find("a", class_="table-player-name")
-                    if name_tag and "href" in name_tag.attrs:
-                        hrefs.append(name_tag["href"])
+        print(f"Page {page_num}: collected {page_new_hrefs} new hrefs")
 
-                print(f"Page {page_num}: collected {len(rows)} players")
+        page_num += 1
 
-                page_num += 1
-                await asyncio.sleep(random.uniform(1, 3))  # Random delay
-
-            except Exception as e:
-                print(f"Error fetching page {page_num}: {e}")
-                break
-
-        await browser.close()
-
-    # Save hrefs
-    with open("hrefs.txt", "w", encoding="utf-8") as f:
-        for href in hrefs:
+    # Save all hrefs back to file
+    with open(f"{version}_hrefs.txt", "w", encoding="utf-8") as f:
+        for href in sorted(hrefs):  # optional: sort to keep order consistent
             f.write(href + "\n")
 
-    print(f"Collected {len(hrefs)} total hrefs.")
+    print(f"Collected {new_hrefs} new hrefs in total.")
+    return list(hrefs)
+
+
+def load_hrefs(version):
+    """Load hrefs from hrefs.txt if it exists."""
+    hrefs = []
+    if os.path.exists(f"{version}_hrefs.txt"):
+        with open(f"{version}_hrefs.txt", "r", encoding="utf-8") as f:
+            hrefs = [line.strip() for line in f if line.strip()]
+        print(f"Loaded {len(hrefs)} {version} hrefs from file.")
     return hrefs
 
-
-
 # MAIN Futbin Sraper
-async def scrape_futbin_players(game_num, version):
-    # Step 1: Collect or load hrefs
-    try:
-        with open("hrefs.txt") as f:
-            hrefs = [line.strip() for line in f if line.strip()]
-        print(f"Loaded {len(hrefs)} hrefs from file.")
-    except FileNotFoundError:
-        hrefs = await collect_all_hrefs(game_num, version)
+async def scrape_futbin_players(version):
 
+    # Load hrefs
+    hrefs = load_hrefs(version)
+    print(f"Loaded {len(hrefs)} hrefs.")
+
+    browser = await launch(
+        headless=True, 
+        args=["--no-sandbox"],
+        executablePath=CHROME_PATH
+        )
     results = []
-    sem = asyncio.Semaphore(5)  # limit concurrency
 
-    async with async_playwright() as p:
-        browser = await p.firefox.launch(headless=True)  # use chromium if you prefer
-        context = await browser.new_context()
+    sem = asyncio.Semaphore(5)  # concurrency limit
 
-        async def process_player(href):
-            async with sem:
-                await asyncio.sleep(random.uniform(0.5, 2))  # random delay
+    async def process_player(href):
+        async with sem:
+            await asyncio.sleep(random.uniform(0.5,2))
+            metadata = scrape_futbin_player(href)
+            if not metadata: return None
+            card_id = metadata["id"]
+            sales_href = href.replace("player", "sales")
+            prices = await get_prices(sales_href, browser)
+            result = {
+                "id": card_id,
+                "details": metadata["details"],
+                "playstyles": metadata["playstyles"],
+                "roles": metadata["roles"],
+                "stats": metadata["stats"],
+                "price_history": prices
+            }
+            print(f"Scraped {metadata['details']['name']}")
+            return result
 
-                # Scrape metadata (requests + BS4)
-                metadata = scrape_futbin_player(href)
-                if not metadata:
-                    return None
+    tasks = [process_player(href) for href in hrefs]
+    for coro in asyncio.as_completed(tasks):
+        res = await coro
+        if res: results.append(res)
 
-                card_id = metadata["id"]
+    await browser.close()
 
-                # Scrape prices (Playwright)
-                prices = await get_prices(href, context)
+    # Save JSON
+    with open(f"{version}_cards.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
 
-                # Combine metadata and prices
-                result = {
-                    "id": card_id,
-                    "details": metadata["details"],
-                    "playstyles": metadata["playstyles"],
-                    "roles": metadata["roles"],
-                    "stats": metadata["stats"],
-                    "price_history": prices
-                }
-
-                print(f"Scraped {metadata['details']['name']} ✅")
-                return result
-
-        tasks = [process_player(href) for href in hrefs]
-        for coro in asyncio.as_completed(tasks):
-            result = await coro
-            if result:
-                results.append(result)
-
-        await browser.close()
-
-    # Save results
-    with open("players.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
-
-    print(f"Finished scraping {len(results)} players.")
     return results
 
     
 
+
+def normalize_column(stat_name: str) -> str:
+    """
+    Normalize stat name:
+    - Remove special characters
+    - Replace spaces with underscores
+    - Convert to lowercase
+    """
+    stat_name = re.sub(r'[^A-Za-z0-9 ]+', '', stat_name)
+    stat_name = stat_name.replace(" ", "_").lower()
+    return stat_name
 
 # Scrapes Specific Futbin Player Metadata
 def scrape_futbin_player(href):
@@ -278,11 +292,16 @@ def scrape_futbin_player(href):
             for stat_div in wrapper.select(".player-stat-value"):
                 stat_name_div = stat_div.find_previous("div", class_="player-stat-name")
                 stat_name = stat_name_div.text.strip() if stat_name_div else "Unknown"
+
+                stat_name = normalize_column(stat_name)
+                normalized_category = normalize_column(category)
+                if stat_name == normalized_category:
+                    stat_name = f"{stat_name}_overall"
                 stat_value = stat_div.get("data-stat-value", None)
                 values[stat_name] = stat_value
         all_stats[category] = values
 
-    player_data = {
+    player_details = {
         "name": name,
         "rating": rating,
         "position": position,
@@ -290,13 +309,10 @@ def scrape_futbin_player(href):
         "club": club,
         "nation": nation,
         "league": league,
-        "playstyles": playstyles,
-        "roles": roles,
         "weakfoot": weakfoot,
         "skills": skills,
         "height": height,
-        "accelerate": accelerate,
-        "stats": all_stats
+        "accelerate": accelerate
     }
 
     # Print details
@@ -319,21 +335,21 @@ def scrape_futbin_player(href):
     
     return {
         "id": card_id,
-        "details": player_data,
+        "details": player_details,
         "playstyles": playstyles,
         "roles": roles,
         "stats": all_stats
     }
 
+MAX_RETRIES = 3
+WAIT_INTERVAL = 0.5  # seconds between polling
+MAX_WAIT = 20  # max seconds to wait for chart
 
 # ========== Prices ==========
 async def get_platform_data(page, market_url, platform):
     try:
-        await page.goto(market_url, wait_until="networkidle", timeout=60000)
-        await page.wait_for_function(
-            "() => typeof Highcharts !== 'undefined' && Highcharts.charts[1] && Highcharts.charts[1].series.length > 0",
-            timeout=10000
-        )
+        await page.goto(market_url, {"waitUntil": "networkidle2", "timeout": 60000})
+        await asyncio.sleep(3)
 
         data = await page.evaluate("""
             () => {
@@ -355,34 +371,54 @@ async def get_platform_data(page, market_url, platform):
         """)
 
         if data:
-            print(f"[{platform.upper()}] Found {len(data)} points.")
             adelaide = pytz.timezone("Australia/Adelaide")
+            cutoff = datetime.datetime(2024, 1, 1, tzinfo=adelaide)
+
+            filtered_data = []
             for item in data:
                 utc_dt = datetime.datetime.fromtimestamp(item['x']/1000, tz=datetime.timezone.utc)
                 adelaide_dt = utc_dt.astimezone(adelaide)
-                item['x'] = adelaide_dt.replace(tzinfo=None)
+                if adelaide_dt >= cutoff:
+                    item['x'] = adelaide_dt.isoformat()  # convert to string after filtering
+                    filtered_data.append(item)
 
-            cutoff = datetime.datetime(2024, 1, 1)
-            data = [item for item in data if item['x'] >= cutoff]
-            return data
+            data = filtered_data
         else:
             print(f"No chart data for {platform.upper()}")
             return []
 
     except Exception as e:
         print(f"Error fetching {platform.upper()}: {e}")
-        return []
+
+    return data
 
 
-async def get_prices(href, context):
+async def get_prices(sales_href, browser):
     platforms = ["pc", "ps"]
+    pages = []
     tasks = []
+
+    # Open pages first
     for platform in platforms:
-        page = await context.new_page()
-        market_url = f"{BASE_URL}{href}?platform={platform}"
+        page = await browser.newPage()
+        pages.append(page)
+        market_url = f"{BASE_URL}{sales_href}?platform={platform}"
         tasks.append(get_platform_data(page, market_url, platform))
+
+    # Gather all tasks
     results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Close pages safely
+    for page in pages:
+        try:
+            if not page.isClosed():
+                await page.close()
+        except Exception:
+            pass
+
+    # Return results as dict
     return {platform: (res if isinstance(res, list) else []) for platform, res in zip(platforms, results)}
+
 
 
 

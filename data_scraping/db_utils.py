@@ -2,6 +2,7 @@ import psycopg
 from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 import os
+import re
 
 load_dotenv()
 
@@ -21,13 +22,14 @@ def initcardTable():
     # Create card table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cards (
-            id SERIAL PRIMARY KEY,
+            card_id SERIAL PRIMARY KEY,
             name VARCHAR(50) NOT NULL,
             game INT,
             version VARCHAR(20),
-            nationality VARCHAR(20),
-            league VARCHAR(20),
-            club VARCHAR(20),
+            nationality VARCHAR(50),
+            league VARCHAR(50),
+            club VARCHAR(50),
+            position VARCHAR(3),
             rating INT,
             weak_foot INT,
             skill_move INT,
@@ -39,21 +41,20 @@ def initcardTable():
     # Create card Playstyle Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_playstyles (
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
-            playstyle_name VARCHAR(50) NOT NULL,
+            card_id INT REFERENCES cards(id),
+            playstyle VARCHAR(50) NOT NULL,
             plus BOOLEAN NOT NULL DEFAULT FALSE,
-            PRIMARY KEY(card_id, playstyle_name)
+            PRIMARY KEY(card_id, playstyle)
         )
     """)
 
     # Create card Roles Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_roles (
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
-            role_name VARCHAR(50) NOT NULL,
+            card_id INT REFERENCES cards(id),
+            role VARCHAR(50) NOT NULL,
             position VARCHAR(50) NOT NULL, 
-            plus SMALLINT DEFAULT 1,
-            PRIMARY KEY(card_id, role_name)
+            plus SMALLINT DEFAULT 1
         )
     """)
     
@@ -78,7 +79,7 @@ def initcardTable():
             finishing INT,
             shot_power INT,
             long_shots INT,
-            volley INT,
+            volleys INT,
             penalties INT
         )
     """)
@@ -91,7 +92,7 @@ def initcardTable():
             passing_overall INT,
             vision INT,
             crossing INT,
-            fk_accuracy INT,
+            fk_acc INT,
             short_pass INT,
             long_pass INT,
             curve INT
@@ -146,8 +147,7 @@ def initcardTable():
             card_id INT REFERENCES cards(id) ON DELETE CASCADE,
             pc_value INT,
             console_value INT,
-            date_time  TIMESTAMP NOT NULL,
-            PRIMARY KEY(card_id, date_time)
+            date_time  TIMESTAMP NOT NULL
         )
     """)
 
@@ -178,43 +178,43 @@ def initcardTable():
     cur.close()
     conn.close()
 
-def addPricetoDatabase(card_id, chart_data):
-    conn = get_connection()
-    # Prepare list of tuples
-    values = []
-    for point in chart_data:
-        pc_value = point['y'] if point['series_name'].lower() == 'pc' else None
-        console_value = point['y'] if point['series_name'].lower() in ['ps', 'console'] else None
-        values.append((card_id, pc_value, console_value, point['x']))
-
-    sql = """
-    INSERT INTO price_history (card_id, pc_value, console_value, date_time)
-    VALUES %s
-    ON CONFLICT (card_id, date_time)
-    DO UPDATE SET
-        pc_value = COALESCE(EXCLUDED.pc_value, price_history.pc_value),
-        console_value = COALESCE(EXCLUDED.console_value, price_history.console_value)
+def add_price_to_database(card_id, chart_data):
     """
+    Inserts price history for a card.
+    chart_data: list of dicts with keys: x (datetime), y, series_name
+    """
+    conn = get_connection()
+    try:
+        values = []
+        for point in chart_data:
+            pc_value = point['y'] if point['series_name'].lower() == 'pc' else None
+            console_value = point['y'] if point['series_name'].lower() in ['ps', 'console'] else None
+            values.append((card_id, pc_value, console_value, point['x']))
 
-    with conn.cursor() as cur:
-        execute_values(cur, sql, values)
-    conn.commit()
+        sql = """
+        INSERT INTO price_history (card_id, pc_value, console_value, date_time)
+        VALUES (%s, %s, %s, %s)
+        """
+        with conn.cursor() as cur:
+            for v in values:
+                cur.execute(sql, v)
+
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def insert_card(card_id, card_details):
     """
-    Inserts a single card into the cards table.
-
-    card_id: int
-    card_details: dict with keys like name, game, version, nationality, league, club, rating, weak_foot, skill_move, height, accelerate
-    conn: psycopg2 connection
+    Inserts or updates a single card in the cards table.
     """
-
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO cards (
-                    id, name, game, version, nationality, league, club, rating, weak_foot, skill_move, height, accelerate
+                    id, name, game, version, nationality, league, club,
+                    rating, weak_foot, skill_move, height, accelerate
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO UPDATE SET
                     name = EXCLUDED.name,
@@ -242,78 +242,117 @@ def insert_card(card_id, card_details):
                 card_details.get("height"),
                 card_details.get("accelerate")
             ))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def insert_card_roles(card_id, roles):
+    """
+    Insert or update card roles.
+    roles: list of dicts with keys: position, role, plus
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            for r in roles:
+                # Check if this card_id + position already exists
+                cur.execute("""
+                    SELECT 1 FROM card_roles
+                    WHERE card_id = %s AND position = %s AND role = %s
+                """, (card_id, r.get("position"), r.get("role")))
+                exists = cur.fetchone() is not None
+
+                if exists:
+                    continue
+                else:
+                    # Insert new row
+                    cur.execute("""
+                        INSERT INTO card_roles (card_id, position, role, plus)
+                        VALUES (%s, %s, %s, %s)
+                    """, (card_id, r.get("position"), r.get("role"), r.get("plus")))
             conn.commit()
     finally:
         conn.close()
 
-def insert_card_roles(id, roles_list):
+
+def insert_card_playstyles(card_id, playstyles_list):
     """
-    roles_list: list of dicts with keys:
-    card_id, role
+    Insert or update playstyles for a card.
+    playstyles_list: list of dicts with keys: playstyle, plus
     """
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            sql = """
-            INSERT INTO card_roles (card_id, role_name, position, plus)
-            VALUES %s
-            ON CONFLICT (card_id, role_name, position, plus) DO NOTHING
-            """
-            values = [(id, r['role'], r['position'], r['plus']) for r in roles_list]
-            execute_values(cur, sql, values)
+            for ps in playstyles_list:
+                cur.execute("""
+                    INSERT INTO card_playstyles (card_id, playstyle, plus)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (card_id, playstyle) DO UPDATE SET
+                        plus = EXCLUDED.plus;
+                """, (
+                    card_id,
+                    ps.get("playstyle"),
+                    ps.get("plus")
+                ))
         conn.commit()
     finally:
         conn.close()
 
-
-def insert_card_playstyles(id, playstyles_list):
-    """
-    playstyles_list: list of dicts with keys:
-    card_id, playstyle
-    """
-    conn = get_connection()
-    try:
-        with conn.cursor() as cur:
-            sql = """
-            INSERT INTO card_playstyles (card_id, playstyle, plus)
-            VALUES %s
-            ON CONFLICT (card_id, playstyle) DO NOTHING
-            """
-            values = [(id, p['playstyle'], p['plus']) for p in playstyles_list]
-            execute_values(cur, sql, values)
-        conn.commit()
-    finally:
-        conn.close()
 
 def insert_card_stats(card_id, stats_list):
+    """
+    Insert or update card stats for each category.
+    
+    stats_list: dict with keys like 'pace', 'shooting', etc., each containing a dict of substats
+    """
     conn = get_connection()
     try:
         with conn.cursor() as cur:
 
             stats_table_mapping = {
-                    "card_pace_stats": "pace",
-                    "card_shooting_stats": "shooting",
-                    "card_passing_stats": "passing",
-                    "card_dribbling_stats": "dribbling",
-                    "card_defending_stats": "defending",
-                    "card_physical_stats": "physical"
-                }
-            
+                "card_pace_stats": "pace",
+                "card_shooting_stats": "shooting",
+                "card_passing_stats": "passing",
+                "card_dribbling_stats": "dribbling",
+                "card_defending_stats": "defending",
+                "card_physical_stats": "physical"
+            }
+
             for table, category in stats_table_mapping.items():
-                stats_values = {k.lower(): v for k, v in stats_list.get(category, {}).items()}
-                if stats_values:
-                    # Build columns and values dynamically
-                    columns = ["card_id"] + list(stats_values.keys())
-                    values = [card_id] + list(stats_values.values())
-                    placeholders = ", ".join(["%s"] * len(values))
-                    cur.execute(f"""
-                        INSERT INTO {table} ({", ".join(columns)})
-                        VALUES ({placeholders})
-                    """, values)
-            
+                substats = stats_list.get(category, {})
+                if not isinstance(substats, dict) or not substats:
+                    continue
+
+                columns = list(substats.keys())
+                values = list(substats.values())
+
+                # Check if a row for this card already exists
+                cur.execute(f"SELECT 1 FROM {table} WHERE card_id = %s", (card_id,))
+                exists = cur.fetchone() is not None
+
+                if exists:
+                    # Build update set dynamically
+                    set_clause = ", ".join([f"{col} = %s" for col in columns])
+                    cur.execute(
+                        f"UPDATE {table} SET {set_clause} WHERE card_id = %s",
+                        values + [card_id]
+                    )
+                else:
+                    # Insert new row
+                    all_columns = ["card_id"] + columns
+                    placeholders = ", ".join(["%s"] * len(all_columns))
+                    cur.execute(
+                        f"INSERT INTO {table} ({', '.join(all_columns)}) VALUES ({placeholders})",
+                        [card_id] + values
+                    )
+
             conn.commit()
     finally:
         conn.close()
+
+
+
 
 def drop_all_tables():
     conn = get_connection()
@@ -333,3 +372,6 @@ def drop_all_tables():
     cur.close()
     conn.close()
     print("All tables dropped.")
+
+# drop_all_tables()
+# initcardTable()
