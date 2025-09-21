@@ -12,6 +12,7 @@ import aiohttp
 import psutil
 import json
 import os
+from db_utils import insert_card_stats, insert_card, insert_card_playstyles, insert_card_roles, add_price_to_database, async_insert_sale_db
 
 BASE_URL = "https://www.futbin.com"
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -26,8 +27,8 @@ def collect_all_hrefs(game_num, version):
     hrefs = set()
     href_lines = 0
     # Load existing hrefs from file
-    if os.path.exists(f"{version}_hrefs.txt"):
-        with open(f"{version}_hrefs.txt", "r", encoding="utf-8") as f:
+    if os.path.exists(f"data_scraping/futbin_hrefs/{game_num}_{version}_hrefs.txt"):
+        with open(f"data_scraping/futbin_hrefs/{game_num}_{version}_hrefs.txt", "r", encoding="utf-8") as f:
             for line in f:
                 hrefs.add(line.strip())
                 href_lines += 1
@@ -71,7 +72,7 @@ def collect_all_hrefs(game_num, version):
         page_num += 1
 
     # Save all hrefs back to file
-    with open(f"{version}_hrefs.txt", "w", encoding="utf-8") as f:
+    with open(f"{game_num}_{version}_hrefs.txt", "w", encoding="utf-8") as f:
         for href in sorted(hrefs):  # optional: sort to keep order consistent
             f.write(href + "\n")
 
@@ -79,20 +80,76 @@ def collect_all_hrefs(game_num, version):
     return list(hrefs)
 
 
-def load_hrefs(version):
+def load_hrefs(game_num, version):
     """Load hrefs from hrefs.txt if it exists."""
     hrefs = []
-    if os.path.exists(f"{version}_hrefs.txt"):
-        with open(f"{version}_hrefs.txt", "r", encoding="utf-8") as f:
+    if os.path.exists(f"data_scraping/futbin_hrefs/{game_num}_{version}_hrefs.txt"):
+        with open(f"data_scraping/futbin_hrefs/{game_num}_{version}_hrefs.txt", "r", encoding="utf-8") as f:
             hrefs = [line.strip() for line in f if line.strip()]
-        print(f"Loaded {len(hrefs)} {version} hrefs from file.")
+        print(f"Loaded {len(hrefs)} {game_num}_{version} hrefs from file.")
     return hrefs
 
-# MAIN Futbin Sraper
-async def scrape_futbin_players(version):
+async def scrape_fc26_players(version):
 
     # Load hrefs
-    hrefs = load_hrefs(version)
+    hrefs = load_hrefs("26", version)
+    print(f"Loaded {len(hrefs)} hrefs.")
+    results = []
+
+    sem = asyncio.Semaphore(5)  # concurrency limit
+
+    async def process_player(href):
+        async with sem:
+            await asyncio.sleep(random.uniform(0.5,2))
+            metadata = scrape_futbin_player(href)
+            if not metadata: return None
+            card_id = metadata["id"]
+            sales_href = href.replace("player", "sales")
+            sales = await get_sales(sales_href)
+            result = {
+                "card_id": card_id,
+                "details": metadata["details"],
+                "playstyles": metadata["playstyles"],
+                "roles": metadata["roles"],
+                "stats": metadata["stats"],
+                "market_sales": sales
+            }
+            print(f"Scraped {metadata['details']['name']}")
+            return result
+
+    tasks = [process_player(href) for href in hrefs]
+    for coro in asyncio.as_completed(tasks):
+        res = await coro
+        if res is None:
+            print("Skipped a player because scraping returned None")
+            continue  # skip this iteration
+        
+        res_card_id =  res["card_id"]
+        
+        # Insert Scraped Data to Database 
+        # Insert player into DB
+        insert_card(res_card_id, res["details"], "26")
+        # Insert stats
+        insert_card_stats(res_card_id, res["stats"])
+        # Insert roles/playstyles if available
+        insert_card_roles(res_card_id, res["roles"])
+        insert_card_playstyles(res_card_id, res["playstyles"])
+
+        all_prices = []
+        for platform, sales in res["market_sales"].items():
+            for sale in sales:
+                sale["platform"] = platform
+                all_prices.append(sale)
+        await async_insert_sale_db(res_card_id, all_prices)
+    
+    return
+
+
+# FC 25 Futbin Sraper
+async def scrape_fc25_players(version):
+
+    # Load hrefs
+    hrefs = load_hrefs("25", version)
     print(f"Loaded {len(hrefs)} hrefs.")
 
     browser = await launch(
@@ -126,13 +183,24 @@ async def scrape_futbin_players(version):
     tasks = [process_player(href) for href in hrefs]
     for coro in asyncio.as_completed(tasks):
         res = await coro
-        if res: results.append(res)
+        res_card_id = res["card_id"]
+        insert_card(res_card_id, res["details"], "25")
+
+        # Insert stats
+        insert_card_stats(res_card_id, res["stats"])
+
+        # Insert roles/playstyles if available
+        insert_card_roles(res_card_id, res["roles"])
+        insert_card_playstyles(res_card_id, res["playstyles"])
+
+        all_prices = []
+        for platform, points in res["price_history"].items():
+            for point in points:
+                point["platform"] = platform
+                all_prices.append(point)
+        add_price_to_database(res_card_id, all_prices)
 
     await browser.close()
-
-    # Save JSON
-    with open(f"{version}_cards.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
 
     return results
 
@@ -341,10 +409,6 @@ def scrape_futbin_player(href):
         "stats": all_stats
     }
 
-MAX_RETRIES = 3
-WAIT_INTERVAL = 0.5  # seconds between polling
-MAX_WAIT = 20  # max seconds to wait for chart
-
 # ========== Prices ==========
 async def get_platform_data(page, market_url, platform):
     try:
@@ -420,7 +484,103 @@ async def get_prices(sales_href, browser):
     return {platform: (res if isinstance(res, list) else []) for platform, res in zip(platforms, results)}
 
 
+# Scrape Live Hourly Prices
+async def fetch_sales(session, url):
+    """Fetch page content asynchronously."""
+    async with session.get(url, headers=HEADERS) as resp:
+        return await resp.text()
 
+
+
+def parse_sales(html):
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        sales_table = soup.find("tbody")
+        if sales_table is None:
+            print(f"No sales table found")
+            return []  # or handle gracefully
+
+        sales_data = []
+
+        for row in sales_table.find_all("tr"):
+            cols = row.find_all("td")
+
+            # Get date/time
+            date_span = cols[0].find("span", class_="sales-date-time")
+            sale_time_str = date_span.get_text(strip=True) if date_span else None
+
+            # Parse string into datetime
+            if sale_time_str:
+                sale_time = datetime.datetime.strptime(sale_time_str, "%b %d, %I:%M %p")
+                # Add current year if needed
+                sale_time = sale_time.replace(year=datetime.datetime.now().year)
+            else:
+                sale_time = None
+
+            # Get price (assuming second td)
+            price_text = cols[1].get_text(strip=True)
+            price = int(price_text.replace(",", "")) if price_text else None
+            
+
+            # Other columns (optional)
+            sold_price_text = cols[2].get_text(strip=True)
+            try:
+                sold_price = int(sold_price_text.replace(",", "")) if sold_price_text else 0
+            except ValueError:
+                sold_price = 0
+
+            # Extract Bid / other text from last column
+            type_div = cols[5].find("div", class_="inline-popup-content")
+            sale_type = type_div.get_text(strip=True) if type_div else None
+
+            sales_data.append({
+                "sale_time": sale_time,
+                "listed_price": price,
+                "sold_price": sold_price,
+                "sale_type": sale_type
+            })
+
+        uk = pytz.timezone("Europe/London")
+        adelaide = pytz.timezone("Australia/Adelaide")
+        cutoff = datetime.datetime(2024, 1, 1, tzinfo=adelaide)
+
+        filtered_data = []
+        for item in sales_data:
+            if item['sale_time']:
+                # Localize as UK time
+                uk_dt = uk.localize(item['sale_time'])
+                # Convert to Adelaide
+                adelaide_dt = uk_dt.astimezone(adelaide)
+                if adelaide_dt >= cutoff:
+                    item['sale_time'] = adelaide_dt.isoformat()
+                    filtered_data.append(item)
+
+        sales_data = filtered_data
+    except Exception as e:
+        print(f"Error: {e}")
+
+    return sales_data
+
+
+async def get_sales(sales_href):
+    platforms = ["pc", "ps"]
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for platform in platforms:
+            url = f"{BASE_URL}{sales_href}?platform={platform}"
+            tasks.append(fetch_sales(session, url))
+
+        html_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Parse HTML for each platform
+    sales_by_platform = {}
+    for platform, html in zip(platforms, html_results):
+        if isinstance(html, str):
+            sales_by_platform[platform] = parse_sales(html)
+        else:
+            sales_by_platform[platform] = []
+
+    return sales_by_platform
 
 def kill_chrome_processes():
     for proc in psutil.process_iter(['pid', 'name']):

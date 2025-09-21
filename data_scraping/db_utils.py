@@ -3,6 +3,10 @@ from psycopg2.extras import execute_values
 from dotenv import load_dotenv
 import os
 import re
+import asyncio
+import pandas as pd
+from dateutil import parser
+import pytz
 
 load_dotenv()
 
@@ -41,7 +45,7 @@ def initcardTable():
     # Create card Playstyle Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_playstyles (
-            card_id INT REFERENCES cards(id),
+            card_id INT REFERENCES cards(card_id),
             playstyle VARCHAR(50) NOT NULL,
             plus BOOLEAN NOT NULL DEFAULT FALSE,
             PRIMARY KEY(card_id, playstyle)
@@ -51,7 +55,7 @@ def initcardTable():
     # Create card Roles Table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_roles (
-            card_id INT REFERENCES cards(id),
+            card_id INT REFERENCES cards(card_id),
             role VARCHAR(50) NOT NULL,
             position VARCHAR(50) NOT NULL, 
             plus SMALLINT DEFAULT 1
@@ -62,7 +66,7 @@ def initcardTable():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_pace_stats (
             id SERIAL PRIMARY KEY,
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             pace_overall INT,
             acceleration INT,
             sprint_speed INT
@@ -73,7 +77,7 @@ def initcardTable():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_shooting_stats (
             id SERIAL PRIMARY KEY,
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             shooting_overall INT,
             att_position INT,
             finishing INT,
@@ -88,7 +92,7 @@ def initcardTable():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_passing_stats (
             id SERIAL PRIMARY KEY,
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             passing_overall INT,
             vision INT,
             crossing INT,
@@ -103,7 +107,7 @@ def initcardTable():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_dribbling_stats (
             id SERIAL PRIMARY KEY,
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             dribbling_overall INT,
             agility INT,
             balance INT,
@@ -118,7 +122,7 @@ def initcardTable():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_defending_stats (
             id SERIAL PRIMARY KEY,
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             defending_overall INT,
             interceptions INT,
             heading_acc INT,
@@ -132,7 +136,7 @@ def initcardTable():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS card_physical_stats (
             id SERIAL PRIMARY KEY,
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             physical_overall INT,
             jumping INT,
             stamina INT,
@@ -144,10 +148,26 @@ def initcardTable():
     # Create Value History
     cur.execute("""
         CREATE TABLE IF NOT EXISTS price_history (
-            card_id INT REFERENCES cards(id) ON DELETE CASCADE,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
             pc_value INT,
             console_value INT,
             date_time  TIMESTAMP NOT NULL
+        )
+    """)
+
+    # Create Trade History
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS market_sales (
+            sale_id SERIAL PRIMARY KEY,
+            card_id INT REFERENCES cards(card_id) ON DELETE CASCADE,
+            platform VARCHAR(20),
+                
+            sale_type VARCHAR(10),
+            sale_time TIMESTAMP NOT NULL,
+                
+            listed_price INT NOT NULL,
+            sold_price INT,
+            was_sold BOOLEAN GENERATED ALWAYS AS (sold_price IS NOT NULL AND sold_price <> 0) STORED
         )
     """)
 
@@ -181,14 +201,14 @@ def initcardTable():
 def add_price_to_database(card_id, chart_data):
     """
     Inserts price history for a card.
-    chart_data: list of dicts with keys: x (datetime), y, series_name
+    chart_data: list of dicts with keys: x (datetime), y, platform
     """
     conn = get_connection()
     try:
         values = []
         for point in chart_data:
-            pc_value = point['y'] if point['series_name'].lower() == 'pc' else None
-            console_value = point['y'] if point['series_name'].lower() in ['ps', 'console'] else None
+            pc_value = point['y'] if point['platform'].lower() == 'pc' else None
+            console_value = point['y'] if point['platform'].lower() in ['ps', 'console'] else None
             values.append((card_id, pc_value, console_value, point['x']))
 
         sql = """
@@ -204,7 +224,58 @@ def add_price_to_database(card_id, chart_data):
         conn.close()
 
 
-def insert_card(card_id, card_details):
+def insert_sale_db(card_id, sale_data):
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            # Get current max sale_time per platform
+            cur.execute(
+                "SELECT platform, MAX(sale_time) FROM market_sales WHERE card_id = %s GROUP BY platform",
+                (card_id,)
+            )
+            max_times = {}
+            for plat, max_time in cur.fetchall():
+                if max_time is not None:
+                    # Convert to aware in Adelaide timezone
+                    max_times[plat] = max_time.replace(tzinfo=pytz.timezone("Australia/Adelaide"))
+
+            values = []
+            for point in sale_data:
+                platform = point['platform'].lower()
+
+                sale_time = point['sale_time']
+                if isinstance(sale_time, str):
+                    sale_time = parser.isoparse(sale_time)
+                
+                # Make sure sale_time is in Adelaide tz
+                if sale_time.tzinfo is None:
+                    adelaide = pytz.timezone("Australia/Adelaide")
+                    sale_time = adelaide.localize(sale_time)
+
+                # Skip older or duplicate entries
+                if platform in max_times and sale_time <= max_times[platform]:
+                    continue
+
+                listed_price = point['listed_price']
+                sale_type = point['sale_type']
+                sold_price = point['sold_price']
+                values.append((card_id, platform, listed_price, sale_type, sale_time, sold_price))
+
+            if values:
+                sql = """
+                INSERT INTO market_sales (card_id, platform, listed_price, sale_type, sale_time, sold_price)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                cur.executemany(sql, values)
+
+        conn.commit()
+    finally:
+        conn.close()
+
+async def async_insert_sale_db(card_id, sale_data):
+    await asyncio.to_thread(insert_sale_db, card_id, sale_data)
+
+def insert_card(card_id, card_details, game_num):
     """
     Inserts or updates a single card in the cards table.
     """
@@ -213,16 +284,17 @@ def insert_card(card_id, card_details):
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO cards (
-                    id, name, game, version, nationality, league, club,
+                    card_id, name, game, version, nationality, league, club, position,
                     rating, weak_foot, skill_move, height, accelerate
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (card_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     game = EXCLUDED.game,
                     version = EXCLUDED.version,
                     nationality = EXCLUDED.nationality,
                     league = EXCLUDED.league,
                     club = EXCLUDED.club,
+                    position = EXCLUDED.position,
                     rating = EXCLUDED.rating,
                     weak_foot = EXCLUDED.weak_foot,
                     skill_move = EXCLUDED.skill_move,
@@ -231,11 +303,12 @@ def insert_card(card_id, card_details):
             """, (
                 card_id,
                 card_details.get("name"),
-                card_details.get("game"),
+                game_num,
                 card_details.get("version"),
                 card_details.get("nation"),
                 card_details.get("league"),
                 card_details.get("club"),
+                card_details.get("position"),
                 card_details.get("rating"),
                 card_details.get("weakfoot"),
                 card_details.get("skills"),
@@ -352,21 +425,12 @@ def insert_card_stats(card_id, stats_list):
         conn.close()
 
 
-
-
 def drop_all_tables():
     conn = get_connection()
     cur = conn.cursor()
     
-    cur.execute("""
-        DO $$ DECLARE
-            r RECORD;
-        BEGIN
-            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-            END LOOP;
-        END $$;
-    """)
+    cur.execute("DROP SCHEMA public CASCADE;")
+    cur.execute("CREATE SCHEMA public;")
     
     conn.commit()
     cur.close()
