@@ -7,6 +7,7 @@
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [**Data Scraping**](#data-scraping)
+    - [Deployed Data Scraper Retrieve Steps](#deployed-data-scraper-retrieve-steps)
     - [Features](#features)
     - [Database Structure](#database-structure)
   - [**Feature Engineering**](#feature-engineering)
@@ -30,6 +31,15 @@ Briefly describe your project:
 ## **Data Scraping**
 
 ---
+
+### Deployed Data Scraper Retrieve Steps
+
+1. Open PuTTy and load fifa settings
+2. extract data on fc26_data.ipynb
+
+/home/Shaninho/fifa_market_strategiser/venv/bin/python /home/Shaninho/fifa_market_strategiser/main_scraper.py
+
+![alt text](png/autoscraping.png)
 
 ### Features
 ![Players Database](png/FUTBINplayers.png)
