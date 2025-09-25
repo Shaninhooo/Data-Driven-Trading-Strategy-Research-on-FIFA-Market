@@ -1,79 +1,48 @@
-name,avg_price,std_dev,volatility_%,lowest_sale,undercut_%,sales_volume,suggested_buy,suggested_sell,net_profit,strategy,latest_sale,min_price,max_price,spread_%,best_buy,best_sell,profit_margin_%,recommendation
-Inigo Martinez Berridi,15937.5,795.62,4.99,11250.0,29.41,200.0,10912.0,15619.0,3926.0,Low-Volatility Snipe,,,,,,,,
-Karim Adeyemi,24130.0,940.42,3.9,17500.0,27.48,200.0,16975.0,23647.0,5490.0,Low-Volatility Snipe,,,,,,,,
-Dayot Upamecano,22692.5,788.47,3.47,17000.0,25.09,200.0,16490.0,22239.0,4637.0,Low-Volatility Snipe,,,,,,,,
-Alessandro Bastoni,19132.5,844.7,4.41,14500.0,24.21,200.0,14065.0,18750.0,3747.0,Low-Volatility Snipe,,,,,,,,
-Yann Sommer,9846.25,445.86,4.53,7600.0,22.81,200.0,7372.0,9649.0,1795.0,Low-Volatility Snipe,,,,,,,,
-Marcos Aoas Correa,56300.0,2486.65,4.42,43500.0,22.74,200.0,42195.0,55174.0,10220.0,Low-Volatility Snipe,,,,,,,,
-Phil Foden,9790.75,443.63,4.53,7600.0,22.38,200.0,7372.0,9595.0,1743.0,Low-Volatility Snipe,,,,,,,,
-Aurelien Tchouameni,23292.5,1128.41,4.84,18500.0,20.58,200.0,17945.0,22827.0,3741.0,Low-Volatility Snipe,,,,,,,,
-Desire Doue,54116.25,1562.93,2.89,43000.0,20.54,200.0,41710.0,53034.0,8672.0,Low-Volatility Snipe,,,,,,,,
-Fermin Lopez Marin,24521.25,1139.4,4.65,19500.0,20.48,200.0,18915.0,24031.0,3914.0,Low-Volatility Snipe,,,,,,,,
-Emiliano Martinez,13430.0,538.8,4.01,10750.0,19.96,200.0,10428.0,13161.0,2075.0,Low-Volatility Snipe,,,,,,,,
-Ewa Pajor,19308.75,778.15,4.03,15500.0,19.73,200.0,15035.0,18923.0,2942.0,Low-Volatility Snipe,,,,,,,,
-Sakina Karchaoui,82817.5,4103.0,4.95,66500.0,19.7,200.0,64505.0,81161.0,12598.0,Low-Volatility Snipe,,,,,,,,
-Murillo Costa dos Santos,27983.75,1116.93,3.99,22500.0,19.6,200.0,21825.0,27424.0,4228.0,Low-Volatility Snipe,,,,,,,,
-Alejandro Grimaldo Garcia,16472.5,742.12,4.51,13250.0,19.56,200.0,12852.0,16143.0,2484.0,Low-Volatility Snipe,,,,,,,,
-Rodrigo Hernandez Cascante,28553.75,811.69,2.84,23000.0,19.45,200.0,22310.0,27983.0,4274.0,Low-Volatility Snipe,,,,,,,,
-Josko Gvardiol,10415.75,394.9,3.79,8400.0,19.35,200.0,8148.0,10207.0,1549.0,Low-Volatility Snipe,,,,,,,,
-Christiane Endler,8672.0,330.7,3.81,7000.0,19.28,200.0,6790.0,8499.0,1284.0,Low-Volatility Snipe,,,,,,,,
-Paulo Dybala,27318.75,1174.73,4.3,22250.0,18.55,200.0,21582.0,26772.0,3851.0,Low-Volatility Snipe,,,,,,,,
-Lionel Messi,34910.0,983.86,2.82,28500.0,18.36,200.0,27645.0,34212.0,4856.0,Low-Volatility Snipe,,,,,,,,
-Joshua Kimmich,38806.25,1309.38,3.37,32000.0,17.54,200.0,31040.0,38030.0,5088.0,Low-Volatility Snipe,,,,,,,,
-Lucas Bergvall,19317.5,691.25,3.58,16000.0,17.17,200.0,15520.0,18931.0,2464.0,Low-Volatility Snipe,,,,,,,,
-David Raya Martin,35602.5,1703.19,4.78,30000.0,15.74,200.0,29100.0,34890.0,4046.0,Low-Volatility Snipe,,,,,,,,
-Kevin De Bruyne,8298.0,267.12,3.22,7000.0,15.64,200.0,6790.0,8132.0,935.0,Low-Volatility Snipe,,,,,,,,
-Gleison Bremer Silva Nascimento,38818.75,1328.78,3.42,32750.0,15.63,200.0,31768.0,38042.0,4372.0,Low-Volatility Snipe,,,,,,,,
-Jaden Philogene,16541.25,771.99,4.67,14000.0,15.36,200.0,13580.0,16210.0,1820.0,Low-Volatility Snipe,,,,,,,,
-Vitor Machado Ferreira,84960.0,3094.56,3.64,72000.0,15.25,200.0,69840.0,83261.0,9258.0,Low-Volatility Snipe,,,,,,,,
-Luis Diaz,30668.75,1436.45,4.68,26000.0,15.22,200.0,25220.0,30055.0,3332.0,Low-Volatility Snipe,,,,,,,,
-Ferland Mendy,21010.0,777.69,3.7,18000.0,14.33,200.0,17460.0,20590.0,2100.0,Low-Volatility Snipe,,,,,,,,
-Heung Min Son,14292.5,639.52,4.47,12250.0,14.29,200.0,11882.0,14007.0,1425.0,Low-Volatility Snipe,,,,,,,,
-Patricia Guijarro Gutierrez,107087.5,5246.54,4.9,92000.0,14.09,200.0,89240.0,104946.0,10459.0,Low-Volatility Snipe,,,,,,,,
-Benjamin Pavard,58167.5,2049.81,3.52,50000.0,14.04,200.0,48500.0,57004.0,5654.0,Low-Volatility Snipe,,,,,,,,
-Willian Pacho,121905.0,5547.06,4.55,105000.0,13.87,200.0,101850.0,119467.0,11644.0,Low-Volatility Snipe,,,,,,,,
-Antonio Rudiger,84117.5,3660.52,4.35,72500.0,13.81,200.0,70325.0,82435.0,7988.0,Low-Volatility Snipe,,,,,,,,
-Sandro Tonali,28252.5,877.91,3.11,24500.0,13.28,200.0,23765.0,27687.0,2538.0,Low-Volatility Snipe,,,,,,,,
-Fikayo Tomori,9769.5,333.24,3.41,8500.0,12.99,200.0,8245.0,9574.0,850.0,Low-Volatility Snipe,,,,,,,,
-Florian Wirtz,298390.0,9185.85,3.08,260000.0,12.87,200.0,252200.0,292422.0,25601.0,Low-Volatility Snipe,,,,,,,,
-Jules Kounde,160455.0,5802.27,3.62,140000.0,12.75,200.0,135800.0,157246.0,13584.0,Low-Volatility Snipe,,,,,,,,
-Nuno Alexandre Tavares Mendes,196665.0,8884.11,4.52,172000.0,12.54,200.0,166840.0,192732.0,16255.0,Low-Volatility Snipe,,,,,,,,
-Alejandro Balde Martinez,16667.5,577.05,3.46,14750.0,11.5,200.0,14308.0,16334.0,1209.0,Low-Volatility Snipe,,,,,,,,
-Eduardo Camavinga,24845.0,930.89,3.75,22000.0,11.45,200.0,21340.0,24348.0,1791.0,Low-Volatility Snipe,,,,,,,,
-Harry Kane,157920.0,6687.84,4.23,140000.0,11.35,200.0,135800.0,154762.0,11224.0,Low-Volatility Snipe,,,,,,,,
-Nicholas Williams Arthuer,156635.0,7669.8,4.9,139000.0,11.26,200.0,134830.0,153502.0,10997.0,Low-Volatility Snipe,,,,,,,,
-Thomas Muller,11830.0,531.52,4.49,10500.0,11.24,200.0,10185.0,11593.0,828.0,Low-Volatility Snipe,,,,,,,,
-Moises Caicedo,39928.75,1635.5,4.1,35500.0,11.09,200.0,34435.0,39130.0,2739.0,Low-Volatility Snipe,,,,,,,,
-Maria Pilar Leon Cebrian,15737.5,667.7,4.24,14000.0,11.04,200.0,13580.0,15423.0,1072.0,Low-Volatility Snipe,,,,,,,,
-Bukayo Saka,19668.75,668.26,3.4,17500.0,11.03,200.0,16975.0,19275.0,1336.0,Low-Volatility Snipe,,,,,,,,
-Lautaro Martinez,21290.0,839.67,3.94,19000.0,10.76,200.0,18430.0,20864.0,1391.0,Low-Volatility Snipe,,,,,,,,
-Hugo Ekitike,20111.25,491.57,2.44,18000.0,10.5,200.0,17460.0,19709.0,1264.0,Low-Volatility Snipe,,,,,,,,
-Gabriel dos S. Magalhaes,9158.0,394.99,4.31,8200.0,10.46,200.0,7954.0,8975.0,572.0,Low-Volatility Snipe,,,,,,,,
-Clint Dempsey,38648.0,,,,,37.0,,,,Fluctuation Trading,48750.0,30000.0,49500.0,50.45,30600.0,37876.0,23.78,✅ Buy & Flip
-Tabitha Chawinga,16710.0,,,,,204.0,,,,Fluctuation Trading,19000.0,13750.0,19750.0,35.9,14025.0,16377.0,16.77,✅ Buy & Flip
-Grace Geyoro,36900.0,,,,,150.0,,,,Fluctuation Trading,40000.0,31250.0,41500.0,27.78,31875.0,36162.0,13.45,✅ Buy & Flip
-Melchie Dumornay,74619.0,,,,,231.0,,,,Fluctuation Trading,92000.0,64000.0,94500.0,40.87,65280.0,73127.0,12.02,✅ Buy & Flip
-Mallory Swanson,16884.0,,,,,233.0,,,,Fluctuation Trading,19750.0,14500.0,19000.0,26.65,14790.0,16546.0,11.87,✅ Buy & Flip
-Chloe Kelly,11566.0,,,,,271.0,,,,Fluctuation Trading,16500.0,10000.0,15750.0,49.71,10200.0,11335.0,11.13,✅ Buy & Flip
-Peter Crouch,52576.0,,,,,23.0,,,,Fluctuation Trading,54000.0,46000.0,56500.0,19.97,46920.0,51525.0,9.81,✅ Buy & Flip
-Lucy Bronze,6338.0,,,,,155.0,,,,Fluctuation Trading,6900.0,5600.0,6800.0,18.93,5712.0,6211.0,8.74,✅ Buy & Flip
-Debora C. de Oliveira,44553.0,,,,,159.0,,,,Fluctuation Trading,54000.0,39750.0,54000.0,31.98,40545.0,43662.0,7.69,✅ Buy & Flip
-Gregor Kobel,6040.0,,,,,176.0,,,,Fluctuation Trading,6200.0,5400.0,6500.0,18.21,5508.0,5920.0,7.48,✅ Buy & Flip
-Trent Alexander-Arnold,6476.0,,,,,233.0,,,,Fluctuation Trading,7000.0,5800.0,7000.0,18.53,5916.0,6347.0,7.29,✅ Buy & Flip
-Alessia Russo,15593.0,,,,,145.0,,,,Fluctuation Trading,16750.0,14000.0,16500.0,16.03,14280.0,15281.0,7.01,✅ Buy & Flip
-Lois Openda,40095.0,,,,,192.0,,,,Fluctuation Trading,42750.0,36000.0,44000.0,19.95,36720.0,39293.0,7.01,✅ Buy & Flip
-Maxence Lacroix,25858.0,,,,,297.0,,,,Fluctuation Trading,28250.0,23250.0,29500.0,24.17,23715.0,25341.0,6.86,✅ Buy & Flip
-Lauren James,45427.0,,,,,221.0,,,,Fluctuation Trading,49500.0,41000.0,49750.0,19.26,41820.0,44519.0,6.45,✅ Buy & Flip
-Bruno Miguel Borges Fernandes,12730.0,,,,,217.0,,,,Fluctuation Trading,13000.0,11500.0,13500.0,15.71,11730.0,12476.0,6.36,✅ Buy & Flip
-Khadija Shaw,14383.0,,,,,154.0,,,,Fluctuation Trading,15000.0,13000.0,15750.0,19.12,13260.0,14095.0,6.3,✅ Buy & Flip
-Luka Modric,32342.0,,,,,113.0,,,,Fluctuation Trading,33000.0,29250.0,34500.0,16.23,29835.0,31696.0,6.24,✅ Buy & Flip
-Serhou Guirassy,6605.0,,,,,134.0,,,,Fluctuation Trading,6800.0,6000.0,7000.0,15.14,6120.0,6474.0,5.78,✅ Buy & Flip
-Piero Hincapie,45127.0,,,,,177.0,,,,Fluctuation Trading,65000.0,41000.0,50000.0,19.94,41820.0,44225.0,5.75,✅ Buy & Flip
-Gianluigi Donnarumma,113361.0,,,,,83.0,,,,Fluctuation Trading,134000.0,103000.0,133000.0,26.46,105060.0,111094.0,5.74,✅ Buy & Flip
-Selma Bacha,28599.0,,,,,201.0,,,,Fluctuation Trading,31500.0,26000.0,31500.0,19.23,26520.0,28028.0,5.69,✅ Buy & Flip
-C. Ronaldo dos Santos Aveiro,15914.0,,,,,292.0,,,,Fluctuation Trading,17000.0,14500.0,17000.0,15.71,14790.0,15596.0,5.45,✅ Buy & Flip
-Alejandro Balde Martinez,16457.0,,,,,484.0,,,,Fluctuation Trading,17250.0,15000.0,17500.0,15.19,15300.0,16128.0,5.41,✅ Buy & Flip
-Lena Oberdorf,21120.0,,,,,77.0,,,,Fluctuation Trading,24250.0,19250.0,23000.0,17.76,19635.0,20698.0,5.41,✅ Buy & Flip
-Temwa Chawinga,5583.0,,,,,174.0,,,,Fluctuation Trading,6900.0,5100.0,6200.0,19.7,5202.0,5472.0,5.19,✅ Buy & Flip
-Declan Rice,24072.0,,,,,220.0,,,,Fluctuation Trading,25000.0,22000.0,26000.0,16.62,22440.0,23591.0,5.13,✅ Buy & Flip
-Daniel Vivian Moreno,8424.0,,,,,247.0,,,,Fluctuation Trading,8900.0,7700.0,9300.0,18.99,7854.0,8256.0,5.12,✅ Buy & Flip
+name,avg_price,std_dev,volatility_%,lowest_sale,undercut_%,sales_volume,suggested_buy,suggested_sell,net_profit,strategy
+Giorgi Mamardashvili,13671.25,680.66,4.98,8000.0,41.48,200.0,7760.0,13398.0,4968.0,Low-Volatility Snipe
+Debora C. de Oliveira,55925.0,2673.62,4.78,39500.0,29.37,200.0,38315.0,54806.0,13751.0,Low-Volatility Snipe
+Alisson Ramses Becker,70490.0,3411.46,4.84,50500.0,28.36,200.0,48985.0,69080.0,16641.0,Low-Volatility Snipe
+Bradley Barcola,9874.0,456.33,4.62,7300.0,26.07,200.0,7081.0,9677.0,2112.0,Low-Volatility Snipe
+Desire Doue,46551.25,2149.75,4.62,35000.0,24.81,200.0,33950.0,45620.0,9389.0,Low-Volatility Snipe
+Sakina Karchaoui,79962.5,3614.23,4.52,61000.0,23.71,200.0,59170.0,78363.0,15275.0,Low-Volatility Snipe
+Maria Francesca Caldentey Oliver,64102.5,2261.93,3.53,49500.0,22.78,200.0,48015.0,62820.0,11664.0,Low-Volatility Snipe
+Mike Maignan,28251.25,1277.34,4.52,22000.0,22.13,200.0,21340.0,27686.0,4962.0,Low-Volatility Snipe
+Joao Pedro Goncalves Neves,29197.5,1396.02,4.78,22750.0,22.08,200.0,22068.0,28614.0,5115.0,Low-Volatility Snipe
+Thibaut Courtois,63815.0,3136.07,4.91,50000.0,21.65,200.0,48500.0,62539.0,10912.0,Low-Volatility Snipe
+Theo Hernandez,52278.75,2591.93,4.96,41500.0,20.62,200.0,40255.0,51233.0,8416.0,Low-Volatility Snipe
+Ewa Pajor,19467.5,887.98,4.56,15500.0,20.38,200.0,15035.0,19078.0,3089.0,Low-Volatility Snipe
+Melvine Malard,13485.0,613.72,4.55,10750.0,20.28,200.0,10428.0,13215.0,2126.0,Low-Volatility Snipe
+Fermin Lopez Marin,24606.25,1025.56,4.17,20000.0,18.72,200.0,19400.0,24114.0,3508.0,Low-Volatility Snipe
+Robert Lewandowski,9002.0,333.24,3.7,7500.0,16.69,200.0,7275.0,8822.0,1106.0,Low-Volatility Snipe
+Aurelien Tchouameni,18280.0,744.56,4.07,15250.0,16.58,200.0,14792.0,17914.0,2226.0,Low-Volatility Snipe
+Ferland Mendy,18182.5,643.24,3.54,15250.0,16.13,200.0,14792.0,17819.0,2136.0,Low-Volatility Snipe
+Antoine Semenyo,12447.5,508.46,4.08,10500.0,15.65,200.0,10185.0,12199.0,1404.0,Low-Volatility Snipe
+William Saliba,153935.0,4388.29,2.85,130000.0,15.55,200.0,126100.0,150856.0,17213.0,Low-Volatility Snipe
+Alessia Russo,15200.0,688.66,4.53,13000.0,14.47,200.0,12610.0,14896.0,1541.0,Low-Volatility Snipe
+Antonio Rudiger,69462.5,2917.6,4.2,59500.0,14.34,200.0,57715.0,68073.0,6954.0,Low-Volatility Snipe
+Moises Caicedo,38470.0,1272.92,3.31,33000.0,14.22,200.0,32010.0,37701.0,3806.0,Low-Volatility Snipe
+Marie Katoto,8739.0,257.31,2.94,7500.0,14.18,200.0,7275.0,8564.0,861.0,Low-Volatility Snipe
+Sandro Tonali,22070.0,848.13,3.84,19000.0,13.91,200.0,18430.0,21629.0,2118.0,Low-Volatility Snipe
+Federico Chiesa,7175.5,292.02,4.07,6200.0,13.59,200.0,6014.0,7032.0,666.0,Low-Volatility Snipe
+Piero Hincapie,39183.75,1225.12,3.13,34000.0,13.23,200.0,32980.0,38400.0,3500.0,Low-Volatility Snipe
+Guro Reiten,18986.25,607.32,3.2,16500.0,13.1,200.0,16005.0,18607.0,1672.0,Low-Volatility Snipe
+Josko Gvardiol,7455.5,361.83,4.85,6500.0,12.82,200.0,6305.0,7306.0,636.0,Low-Volatility Snipe
+Irene Paredes Hernandez,8700.5,274.09,3.15,7600.0,12.65,200.0,7372.0,8526.0,728.0,Low-Volatility Snipe
+Jude Bellingham,177405.0,7010.47,3.95,155000.0,12.63,200.0,150350.0,173857.0,14814.0,Low-Volatility Snipe
+Gabriel dos S. Magalhaes,8918.0,288.08,3.23,7800.0,12.54,200.0,7566.0,8740.0,737.0,Low-Volatility Snipe
+Lionel Messi,27435.0,1241.87,4.53,24000.0,12.52,200.0,23280.0,26886.0,2262.0,Low-Volatility Snipe
+Ryan Gravenberch,102782.5,2729.23,2.66,90000.0,12.44,200.0,87300.0,100727.0,8391.0,Low-Volatility Snipe
+Gleison Bremer Silva Nascimento,31853.75,1408.04,4.42,28000.0,12.1,200.0,27160.0,31217.0,2496.0,Low-Volatility Snipe
+Virgil van Dijk,243375.0,10350.36,4.25,214000.0,12.07,200.0,207580.0,238508.0,19003.0,Low-Volatility Snipe
+Eduardo Camavinga,25013.75,742.3,2.97,22000.0,12.05,200.0,21340.0,24513.0,1947.0,Low-Volatility Snipe
+Salma Celeste Paralluelo Ayingono,60820.0,2524.77,4.15,53500.0,12.04,200.0,51895.0,59604.0,4729.0,Low-Volatility Snipe
+Patricia Guijarro Gutierrez,106565.0,4262.53,4.0,94000.0,11.79,200.0,91180.0,104434.0,8032.0,Low-Volatility Snipe
+Micky van de Ven,86962.5,3016.68,3.47,77000.0,11.46,200.0,74690.0,85223.0,6272.0,Low-Volatility Snipe
+Frenkie de Jong,185920.0,9157.67,4.93,165000.0,11.25,200.0,160050.0,182202.0,13042.0,Low-Volatility Snipe
+Murillo Costa dos Santos,22245.0,1004.37,4.52,19750.0,11.22,200.0,19158.0,21800.0,1552.0,Low-Volatility Snipe
+Claudia Pina Medina,7071.0,214.92,3.04,6300.0,10.9,200.0,6111.0,6930.0,473.0,Low-Volatility Snipe
+Marcus Rashford,18196.25,721.13,3.96,16250.0,10.7,200.0,15762.0,17832.0,1178.0,Low-Volatility Snipe
+Kadidiatou Diani,167935.0,8388.84,5.0,150000.0,10.68,200.0,145500.0,164576.0,10847.0,Low-Volatility Snipe
+Marcos Aoas Correa,58760.0,2460.22,4.19,52500.0,10.65,200.0,50925.0,57585.0,3781.0,Low-Volatility Snipe
+Hugo Ekitike,15041.25,554.09,3.68,13500.0,10.25,200.0,13095.0,14740.0,908.0,Low-Volatility Snipe
+Willian Pacho,118010.0,4037.5,3.42,106000.0,10.18,200.0,102820.0,115650.0,7048.0,Low-Volatility Snipe
