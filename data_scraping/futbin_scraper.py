@@ -47,39 +47,54 @@ def collect_all_hrefs(version):
         soup = BeautifulSoup(response.text, "html.parser")
         rows = soup.find_all("tr", class_="player-row")
 
+        # Stop only when page has no rows at all
         if not rows:
             print(f"No player rows found, stopping at page {page_num}")
             break
 
         page_new_hrefs = 0
+        new_entries = []
+
         for row in rows:
             name_tag = row.find("a", class_="table-player-name")
             if name_tag and "href" in name_tag.attrs:
                 href = name_tag["href"]
                 card_id = extract_card_id(href)
+                version_detail = row.find("div", class_="table-player-revision")
+                price = row.find("div", class_="price")
+                if "SBC" in version_detail.get_text():
+                    continue
+                if price:
+                    price_val = price.get_text(strip=True).replace(",", "")
+                    if price_val == "0":
+                        continue
+                else:
+                    continue
+
                 if href not in hrefs:
                     hrefs.add(href)
                     page_new_hrefs += 1
                     new_hrefs += 1
+                    new_entries.append((card_id, href, version))
 
-                    # Insert into DB
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            INSERT INTO hrefs (card_id, href, version)
-                            VALUES (%s, %s, %s)
-                            ON DUPLICATE KEY UPDATE card_id=card_id;
-                        """, (card_id, href, version))
-                    conn.commit()
-
-        if page_new_hrefs == 0:
-            print(f"No new hrefs found on page {page_num}, stopping.")
-            break
+        # Bulk insert new hrefs into DB
+        if new_entries:
+            with conn.cursor() as cur:
+                cur.executemany("""
+                    INSERT INTO hrefs (card_id, href, version)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE card_id=card_id;
+                """, new_entries)
+            conn.commit()
 
         print(f"Page {page_num}: collected {page_new_hrefs} new hrefs")
         page_num += 1
 
     print(f"Collected {new_hrefs} new hrefs in total.")
+    conn.close()
     return list(hrefs)
+
+
 
 
 def load_meta_hrefs(version, min_price=5000):
@@ -89,10 +104,10 @@ def load_meta_hrefs(version, min_price=5000):
             cur.execute("""
                 SELECT DISTINCT c.href
                 FROM hrefs c
-                JOIN market_sales ms ON c.card_id = ms.card_id
-                WHERE ms.sold_price > %s
-                  AND c.version = %s
-            """, (min_price, version))
+                LEFT JOIN market_sales ms ON c.card_id = ms.card_id
+                WHERE c.version = %s
+                  AND (ms.sold_price > %s OR ms.sold_price IS NULL);
+            """, (version, min_price))
             rows = cur.fetchall()
             return [row['href'] for row in rows]
     finally:

@@ -15,7 +15,7 @@ async def main():
     # Collect Hrefs From Futbin
   
     # Create tasks for all versions
-    versions = ["gold_rare", "icons", "heroes", "gold_if"]
+    versions = ["gold_rare", "icons", "heroes", "gold_if", "cornerstones"]
     for version in versions:
         collect_all_hrefs(version)  # synchronous
         await scrape_fc26_players(version)  # async
