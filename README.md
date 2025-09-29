@@ -82,6 +82,7 @@ Scatter Plot of 82 Rated Player Prices
 ## **Live Execution**
 
 ![alt text](png/discordbot.png)
+
 Implemented a discord bot for live deal alerts to compliment the trading strategies from live data
 
 
