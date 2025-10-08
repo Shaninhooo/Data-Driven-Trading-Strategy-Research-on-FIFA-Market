@@ -97,22 +97,34 @@ def collect_all_hrefs(version):
 
 
 
-def load_meta_hrefs(version, min_price=5000):
+def load_meta_hrefs(version, min_price=9000):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
-                SELECT DISTINCT c.href
-                FROM hrefs c
-                LEFT JOIN market_sales ms ON c.card_id = ms.card_id
-                WHERE c.version = %s
-                  AND (ms.sold_price > %s OR ms.sold_price IS NULL);
+                SELECT DISTINCT h.href
+                FROM hrefs h
+                JOIN cards c ON h.card_id = c.card_id
+                LEFT JOIN (
+                    -- Get latest sale price per card
+                    SELECT ms1.card_id, ms1.sold_price
+                    FROM market_sales ms1
+                    JOIN (
+                        SELECT card_id, MAX(sale_time) AS last_sale
+                        FROM market_sales
+                        GROUP BY card_id
+                    ) ms2
+                    ON ms1.card_id = ms2.card_id AND ms1.sale_time = ms2.last_sale
+                ) AS latest_sale
+                ON latest_sale.card_id = h.card_id
+                WHERE h.version = %s
+                  AND (c.rating >= 84 OR latest_sale.sold_price > %s);
             """, (version, min_price))
+            
             rows = cur.fetchall()
-            return [row['href'] for row in rows]
+            return [row['href'] for row in rows]  # default cursor returns tuples
     finally:
         conn.close()
-
 
 
 async def scrape_fc26_players(version):
@@ -121,7 +133,7 @@ async def scrape_fc26_players(version):
     hrefs = load_meta_hrefs(version)
     print(f"Loaded {len(hrefs)} hrefs.")
 
-    sem = asyncio.Semaphore(2)  # concurrency limit
+    sem = asyncio.Semaphore(4)  # concurrency limit
 
     async def process_player(href):
         async with sem:

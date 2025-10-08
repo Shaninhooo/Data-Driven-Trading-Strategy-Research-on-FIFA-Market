@@ -1,0 +1,93 @@
+- ML Workflow
+
+
+
+
+# Personal Trading Journal
+### To measure and test the success rate of the strategies
+---
+
+### 1️⃣ The Concept
+
+For each player (card), you want to maintain a **running log** of:
+
+* When you “buy” it (price at that time)
+* When you “sell” it (price at that time)
+* Profit or loss for that transaction
+
+This is **like a personal trading journal** for FIFA cards. Over time, this will give you:
+
+* Average profit per card
+* Cards with consistent upside
+* Edge over the market (where your strategy actually works)
+
+---
+
+### 2️⃣ What the “list” looks like
+
+For example, a DataFrame could look like this:
+
+| card_id | name             | buy_time         | buy_price | sell_time        | sell_price | profit |
+| ------- | ---------------- | ---------------- | --------- | ---------------- | ---------- | ------ |
+| 101     | Patrick Kluivert | 2025-09-27 15:00 | 220000    | 2025-09-28 11:00 | 270000     | 50000  |
+| 102     | David Raya       | 2025-09-28 10:00 | 3000      | 2025-09-28 11:30 | 35000      | 32000  |
+| 101     | Patrick Kluivert | 2025-09-28 11:15 | 270000    | 2025-09-28 18:00 | 272000     | 2000   |
+
+* Each row is **one buy-sell event**.
+* `profit` = `sell_price - buy_price`.
+* This is **cumulative over time**.
+
+---
+
+### 3️⃣ How to generate this “ongoing list”
+
+You can:
+
+1. Keep a **database table** called `trades`:
+
+```sql
+CREATE TABLE trades (
+    trade_id SERIAL PRIMARY KEY,
+    card_id INT,
+    name VARCHAR(255),
+    buy_time DATETIME,
+    buy_price INT,
+    sell_time DATETIME,
+    sell_price INT,
+    profit INT
+);
+```
+
+2. Whenever your bot recommends a **buy**, log it in `trades` with `sell_price = NULL`.
+
+3. When you actually sell (or when the bot suggests selling), update `sell_time` and `sell_price`, calculate `profit`.
+
+4. You can query your edge anytime:
+
+```sql
+SELECT card_id, name, SUM(profit) as total_profit, AVG(profit) as avg_profit
+FROM trades
+GROUP BY card_id, name
+ORDER BY total_profit DESC;
+```
+
+---
+
+### 4️⃣ Visualization / Analysis
+
+Once you have the table:
+
+* **Profit over time** per card → line chart
+* **Histogram of profits** → see distribution of wins/losses
+* **Edge analysis** → see which cards are consistently profitable
+
+---
+
+### 5️⃣ Key advantage
+
+* This is **different from just suggesting “buy/sell now”**.
+* You can see whether your strategy is **actually profitable**, card by card.
+* Over time, you can refine thresholds (drop %, min profit, etc.) based on **real historical performance**.
+
+---
+
