@@ -133,17 +133,7 @@ cur.execute("SELECT * FROM price_history WHERE player_id = 1;")
 
 ---
 
-## Contributing
 
-> Optional section for collaborators.
-
-* Fork the repo, create a branch, submit a pull request.
-
----
-
-## License
-
-> Optional, but recommended (MIT, Apache, etc.)
 
 ---
 
