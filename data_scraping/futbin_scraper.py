@@ -1,14 +1,8 @@
-import asyncio
 import requests
 from bs4 import BeautifulSoup
-import datetime
-import random
-from collections import defaultdict
 from unidecode import unidecode
 import re
-import pytz
-import aiohttp
-from db_utils import insert_card_stats, insert_card, insert_card_playstyles, insert_card_roles, async_insert_sale_db, get_connection
+from db_utils import get_connection
 
 BASE_URL = "https://www.futbin.com"
 HEADERS = {
@@ -19,8 +13,13 @@ HEADERS = {
 }
 
 def extract_card_id(href: str) -> int | None:
-    match = re.search(r"/player/(\d+)/", href)
-    return int(match.group(1)) if match else None
+    """Safely extract card_id from href. Returns None if invalid."""
+    match = re.search(r"/player/(\d+)/?", href)
+    if match:
+        return int(match.group(1))
+    else:
+        print(f"Warning: Could not extract card_id from href: {href}")
+        return None
 
 def collect_all_hrefs(version):
     hrefs = set()
@@ -94,103 +93,60 @@ def collect_all_hrefs(version):
     conn.close()
     return list(hrefs)
 
+def load_all_hrefs():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT href FROM hrefs")
+            rows = cur.fetchall()
+            return [row['href'] for row in rows]  # skip invalid
+    finally:
+        conn.close()
 
 
-
-def load_meta_hrefs(version, min_price=9000):
+def load_version_hrefs(version):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT DISTINCT h.href
                 FROM hrefs h
-                JOIN cards c ON h.card_id = c.card_id
-                LEFT JOIN (
-                    -- Get latest sale price per card
-                    SELECT ms1.card_id, ms1.sold_price
-                    FROM market_sales ms1
-                    JOIN (
-                        SELECT card_id, MAX(sale_time) AS last_sale
-                        FROM market_sales
-                        GROUP BY card_id
-                    ) ms2
-                    ON ms1.card_id = ms2.card_id AND ms1.sale_time = ms2.last_sale
-                ) AS latest_sale
-                ON latest_sale.card_id = h.card_id
                 WHERE h.version = %s
-                  AND (c.rating >= 84 OR latest_sale.sold_price > %s);
-            """, (version, min_price))
+            """, (version,))  # note the comma to make it a tuple
             
             rows = cur.fetchall()
             return [row['href'] for row in rows]  # default cursor returns tuples
     finally:
         conn.close()
 
+def load_new_hrefs():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT h.href
+                FROM hrefs h
+                JOIN cards c ON c.card_id = h.card_id
+                WHERE c.current_pc_price IS NULL
+                   OR c.current_pc_price = 0
+            """)
+            
+            return [row["href"] for row in cur.fetchall()]
+    finally:
+        conn.close()
 
-async def scrape_fc26_players(version):
 
-    # Load hrefs
-    hrefs = load_meta_hrefs(version)
-    print(f"Loaded {len(hrefs)} hrefs.")
+def load_meta_hrefs():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT href FROM meta_cards")
+            rows = cur.fetchall()
+            # rows = [('/26/player/31/mohamed-salah',), ...]
+            return [row['href'] for row in rows]
+    finally:
+        conn.close()
 
-    sem = asyncio.Semaphore(4)  # concurrency limit
-
-    async def process_player(href):
-        async with sem:
-            await asyncio.sleep(random.uniform(0.5,2))
-            try:
-                # Extract card_id from href
-                card_id = int(href.split("/")[3])
-
-                # Check if metadata already exists in DB
-                conn = get_connection()
-                metadata_exists = False
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("SELECT 1 FROM cards WHERE card_id=%s LIMIT 1", (card_id,))
-                        metadata_exists = cur.fetchone() is not None
-                finally:
-                    conn.close()
-
-                if not metadata_exists:
-                    # Scrape full metadata
-                    metadata = await asyncio.to_thread(scrape_futbin_player, href)
-                    if not metadata:
-                        print(f"Skipped player {href} because metadata could not be scraped")
-                        return None
-
-                    # Insert metadata into DB
-                    insert_card(card_id, metadata["details"], "26")
-                    insert_card_stats(card_id, metadata["stats"])
-                    insert_card_roles(card_id, metadata["roles"])
-                    insert_card_playstyles(card_id, metadata["playstyles"])
-                else:
-                    print(f"Metadata already exists for player {card_id}, skipping scraping")
-                    metadata = None  # we don't need metadata for printing
-
-                # Always scrape market sales
-                sales_href = href.replace("player", "sales")
-                sales = await get_sales(sales_href)
-                all_prices = []
-                for platform, s in sales.items():
-                    for sale in s:
-                        sale["platform"] = platform
-                        all_prices.append(sale)
-
-                await async_insert_sale_db(card_id, all_prices)
-                print(f"✅ Processed player {card_id} (metadata {'exists' if metadata_exists else 'added'})")
-
-                return card_id
-
-            except Exception as e:
-                print(f"Error scraping {href}: {e}")
-                return None
-
-    tasks = [process_player(href) for href in hrefs]
-    for coro in asyncio.as_completed(tasks):
-        await coro
-
-    return
 
 
 
@@ -378,89 +334,6 @@ def scrape_futbin_player(href):
         "stats": all_stats
     }
 
-# ========== Prices ==========
-
-# Scrape Live Hourly Prices
-async def fetch_sales(session, url):
-    """Fetch page content asynchronously."""
-    async with session.get(url, headers=HEADERS) as resp:
-        return await resp.text()
 
 
-
-def parse_sales(html):
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        sales_table = soup.find("tbody")
-        if sales_table is None:
-            print(f"No sales table found")
-            return []
-
-        sales_data = []
-        uk = pytz.timezone("Europe/London")
-        adelaide = pytz.timezone("Australia/Adelaide")
-        cutoff = adelaide.localize(datetime.datetime(2024, 1, 1))
-
-        for row in sales_table.find_all("tr"):
-            cols = row.find_all("td")
-
-            # Parse date/time
-            date_span = cols[0].find("span", class_="sales-date-time")
-            sale_time_str = date_span.get_text(strip=True) if date_span else None
-            if sale_time_str:
-                naive_dt = datetime.datetime.strptime(sale_time_str, "%b %d, %I:%M %p")
-                naive_dt = naive_dt.replace(year=datetime.datetime.now().year)
-                uk_dt = uk.localize(naive_dt)           # make it aware
-                adelaide_dt = uk_dt.astimezone(adelaide)
-            else:
-                adelaide_dt = None
-
-            # Parse prices
-            price_text = cols[1].get_text(strip=True)
-            price = int(price_text.replace(",", "")) if price_text else None
-
-            sold_price_text = cols[2].get_text(strip=True)
-            try:
-                sold_price = int(sold_price_text.replace(",", "")) if sold_price_text else 0
-            except ValueError:
-                sold_price = 0
-
-            # Sale type
-            type_div = cols[5].find("div", class_="inline-popup-content")
-            sale_type = type_div.get_text(strip=True) if type_div else None
-
-            if adelaide_dt and adelaide_dt >= cutoff:
-                sales_data.append({
-                    "sale_time": adelaide_dt,  # now fully aware datetime
-                    "listed_price": price,
-                    "sold_price": sold_price,
-                    "sale_type": sale_type
-                })
-
-    except Exception as e:
-        print(f"Error parsing sales: {e}")
-
-    return sales_data
-
-
-
-async def get_sales(sales_href):
-    platforms = ["pc", "ps"]
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for platform in platforms:
-            url = f"{BASE_URL}{sales_href}?platform={platform}"
-            tasks.append(fetch_sales(session, url))
-
-        html_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    # Parse HTML for each platform
-    sales_by_platform = {}
-    for platform, html in zip(platforms, html_results):
-        if isinstance(html, str):
-            sales_by_platform[platform] = parse_sales(html)
-        else:
-            sales_by_platform[platform] = []
-
-    return sales_by_platform
 

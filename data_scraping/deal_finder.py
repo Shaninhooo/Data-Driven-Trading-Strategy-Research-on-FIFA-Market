@@ -5,364 +5,642 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
+import logging
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+
+# Set logging level for better visibility
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 
+# --- Discord Setup ---
 intents = discord.Intents.default()
-intents.message_content = True  # Required to read messages
+intents.message_content = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = 1421417739213471795
+
+DISCORD_WEBHOOKS = {
+    "DISCORD_CHANNEL_ICON": os.getenv("ICON_WEBHOOK"),
+    "DISCORD_CHANNEL_GOLD": os.getenv("GOLD_WEBHOOK"),
+    "DISCORD_CHANNEL_PROMO": os.getenv("PROMO_WEBHOOK"),
+    "DISCORD_CHANNEL_HERO": os.getenv("HERO_WEBHOOK"),
+    "DISCORD_CHANNEL_BEST": os.getenv("BEST_WEBHOOK")
+}
+DB_URL = os.getenv("DB_URL") 
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
-    
-    channel = bot.get_channel(CHANNEL_ID)
-    
-    if channel:
-        # Only delete messages that are not pinned
-        deleted = await channel.purge(limit=1000, check=lambda m: not m.pinned)
-        print(f"Deleted {len(deleted)} messages (pinned messages preserved)")
-    
+    """Purges all target channels (except pinned messages) before analysis starts."""
+    print(f'✅ Logged in as {bot.user}')
+
+    # List of channel IDs you want to clean up
+    CHANNEL_IDS = [
+        1421417739213471795,  # ICON deals channel
+        1432222288631037953,  # GOLD deals channel
+        1434118996420202508,  # PROMO deals channel
+        1434754189887537252,   # HERO deals channel
+        1436295698554552422   # BEST deals channel
+    ]
+
+    for channel_id in CHANNEL_IDS:
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            print(f"⚠️ Channel ID {channel_id} not found (bot may lack access).")
+            continue
+
+        try:
+            deleted = await channel.purge(limit=1000, check=lambda m: not m.pinned)
+            print(f"🧹 {channel.name}: Deleted {len(deleted)} messages (pinned preserved)")
+        except Exception as e:
+            print(f"⚠️ Failed to purge {channel.name}: {e}")
+
+    print("✅ All channels cleaned up. Closing bot...")
     await bot.close()
 
-DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
-discord = Discord(url=DISCORD_WEBHOOK)
-DB_URL = os.getenv("DB_URL")  # e.g., "mysql+pymysql://user:pass@host/dbname"
+def send_discord_message(message: str, channel=None):
+    """Sends a message using the appropriate Discord webhook."""
+    webhook_url = DISCORD_WEBHOOKS.get(channel)
 
-
-def send_discord_message(message: str):
-    if not DISCORD_WEBHOOK:
-        print("⚠️ No Discord webhook set.")
+    if not webhook_url:
+        print(f"⚠️ No Discord webhook configured for channel: {channel}")
         return
-    discord.post(content=message)
 
-
+    try:
+        discord_webhook_client = Discord(url=webhook_url)
+        discord_webhook_client.post(content=message)
+        print(f"✅ Sent message to {channel}")
+    except Exception as e:
+        print(f"⚠️ Error sending webhook message to {channel}: {e}")
 
 # ------------------- DATA FETCHING -------------------
 
-def fetch_data(conn, platform="pc"):
-    """Fetch raw sales in last 8 hours for dip detection"""
+def fetch_meta_sales(conn, platform="pc", hours=172):
+    """Fetches sales data for meta cards over a specified period."""
+    cutoff_time = datetime.now() - timedelta(hours=hours)
+    
     query = f"""
         SELECT 
             ms.card_id,
             c.name,
             c.version,
+            c.current_ps_price,
+            c.current_pc_price,
             ms.sale_time,
             ms.sold_price,
-            ms.platform
+            ms.platform,
+            ms.was_sold,
+            ms.listed_price
         FROM market_sales ms
         JOIN cards c ON ms.card_id = c.card_id
-        WHERE ms.sold_price > 20000
-          AND ms.platform = '{platform}'
-          AND ms.sale_time >= NOW() - INTERVAL 49 HOUR
+        JOIN meta_cards m ON ms.card_id = m.card_id
+        WHERE ms.platform = '{platform}'
+        AND ms.sale_time >= '{cutoff_time}'
     """
+    
     return pd.read_sql(query, conn)
 
+def clean_group(g):
+    """Removes outliers (top/bottom 5%) and low prices from a card's sales history."""
+    g = g[g['sold_price'].notnull()]  # keep zero prices, just remove NaN
+    if len(g) < 10:
+        return g
+    # Remove top and bottom 5% as outliers
+    low = g['sold_price'].quantile(0.05)
+    high = g['sold_price'].quantile(0.95)
+    return g[(g['sold_price'] >= low) & (g['sold_price'] <= high)]
 
-def strategy_discord_notify(conn, strategy, strategy_name):
+def strategy_discord_notify(conn, strategy):
     """
-    Discord-ready notification system
-    - Runs a given strategy
-    - Outputs strategy-specific formatted messages
+    Runs a trading strategy for all platforms and categories (Icon, Gold, Promo),
+    formats messages, and sends Discord notifications for top opportunities.
+    Each category sends messages to its own Discord channel.
     """
-    platforms = ["pc", "ps"]
-    
+    platforms = ["pc"]
+
+    # Map each category to its respective Discord channel or webhook
+    CHANNELS = {
+        "ICON": "DISCORD_CHANNEL_ICON",
+        "GOLD": "DISCORD_CHANNEL_GOLD",
+        "PROMO": "DISCORD_CHANNEL_PROMO",
+        "HERO": "DISCORD_CHANNEL_HERO",
+        "BEST": "DISCORD_CHANNEL_BEST"  # Using PROMO channel for HERO as well
+    }
+
     for plat in platforms:
-        df = fetch_data(conn, platform=plat)
+        df = fetch_meta_sales(conn, platform=plat)
+        print(f"Data received for {plat} ({len(df)} rows)")
+
         if df.empty:
-            print(f"No data on {plat} for {strategy_name}")
+            print(f"No data on {plat}")
             continue
 
-        df_sorted = df.sort_values("sale_time")
-        candidates = strategy(df_sorted)
-            
-        for idx, row in candidates.iterrows():
-            buy_price = row['buy_price']
-            z_score_potential_profit = int(row['long_mean']* 0.95)  - buy_price
-            z_score_profit_margin_pct = z_score_potential_profit / buy_price * 100
-            drop_pct = (row['long_mean'] - buy_price) / row['long_mean'] * 100
+        # Clean data by card group
+        df_clean = df.groupby("card_id", group_keys=False)\
+                     .apply(clean_group)\
+                     .reset_index(drop=True)
 
-            # different template depending on strategy
-            if strategy_name == "zscore":
+        # General market health message (to a general channel)
+        # send_discord_message(f"--- 🌐 **{plat.upper()}** Market Analysis ---")
+
+        # market_status = check_for_live_crash_signal(df_clean)
+        # send_discord_message(market_status["report"], channel="DISCORD_CHANNEL_GOLD")
+
+        # Category filtering
+        icon_df = df_clean[df_clean["version"].str.contains("icon", case=False, na=False)]
+        gold_df = df_clean[df_clean["version"].str.contains("gold", case=False, na=False)]
+        promo_df = df_clean[
+            ~df_clean["version"].str.contains("icon|gold|hero", case=False, na=False)
+        ]
+        hero_df = df_clean[df_clean["version"].str.contains("hero", case=False, na=False)]
+
+        categories = {
+            "ICON": icon_df,
+            "GOLD": gold_df,
+            "PROMO": promo_df,
+            "HERO": hero_df,
+            "BEST": df_clean  # Overall best deals across all categories
+        }
+
+        for category, df_cat in categories.items():
+            channel = CHANNELS.get(category)
+            print(f"\n[{plat.upper()} - {category}] → {len(df_cat)} cards")
+
+            if df_cat.empty:
+                send_discord_message(
+                    f"⚪ **{plat.upper()} {category}**: No cards available.",
+                    channel=channel
+                )
+                continue
+
+            candidates = strategy(df_cat, plat)
+
+            if candidates.empty:
+                send_discord_message(
+                    f"✅ **{plat.upper()} {category}**: No dip-buy signals found.",
+                    channel=channel
+                )
+                continue
+
+            candidates = candidates.sort_values("confidence", ascending=False)
+            top_n = candidates.head(5)
+
+            send_discord_message(
+                f"🚨 **{plat.upper()} {category}** Top Dip Buy Signals ({len(top_n)} found):",
+                channel=channel
+            )
+
+            for _, row in top_n.iterrows():
+                name = row.get("name", "Unknown")
+                version = row.get("version", "")
+                buy_price = row.get(f"current_{plat}_price", 0)
+                confidence = row.get("confidence", 0)
+                drop_pct = row.get("drop_pct", 0)
+                long_mean = row.get("long_mean", None)
+                price_status = row.get("price_status", "Unknown")
+                demand_status = row.get("demand_status", "Unknown")
+
                 msg = (
-                    f"📊 **Z-Score Strategy Opportunity**\n"
-                    f"🌐 {plat.upper()}\n"
-                    f"🎴 {row['name']} ({row['score']})\n"
-                    f"Drop: {drop_pct:.2f}% | Buy ~ {int(buy_price)}\n"
-                    f"Long Average: {int(row['long_mean'])}\n"
-                    f"💰 Profit: {int(z_score_potential_profit)} ({z_score_profit_margin_pct:.2f}%)\n"
+                    f"🎯 **{category} Deal Alert**\n"
+                    f"🎴 Card: **{name}** ({version})\n"
+                    f"💰 Buy Price: **{int(buy_price):,}**\n"
+                    f"📉 Drop %: `{drop_pct:.2%}`\n"
+                    f"🔮 Confidence Score: `{confidence:.3f}`\n"
                 )
 
-            send_discord_message(msg)
-            
-       
+                if long_mean:
+                    msg += f"📊 24h Mean: `{int(long_mean):,}`\n"
+                if price_status:
+                    msg += f"📈 Price Status: `{price_status}`\n"
+                if demand_status:
+                    msg += f"🔥 Demand Status: `{demand_status}`\n"
 
-# ------------------- STRATEGIES -------------------
-    
-    
-def calculate_rebound_flag(x: pd.Series, window: int = 10) -> bool:
+                print(f"Sending Discord alert for {name} ({plat}-{category}) → {confidence:.3f}")
+                send_discord_message(msg, channel=channel)
+
+            print(f"✅ Sent {len(top_n)} messages for {plat}-{category}")
+
+
+
+# ------------------- STRATEGIES (Fixed History Check) -------------------
+
+
+def compute_price_slope(df):
     """
-    Checks if the last 'window' prices show a net upward momentum (e.g., 
-    more than 50% of the steps were increases).
+    Compute linear regression slope of price vs time (in hours).
+    Negative slope = price dropping.
     """
-    if len(x) < window:
-        return False
-    
-    # Slice the last 'window' prices
-    y = x.tail(window).values 
-    
-    # Count how many steps were increases (y[i] < y[i+1])
-    # Returns True if at least window/2 + 1 steps were increases
-    increase_count = sum(y[i] < y[i+1] for i in range(len(y) - 1))
-    
-    # We require a majority of steps to be increasing for a flexible rebound
-    required_increases = int((window - 1) / 2) + 1
-    
-    return increase_count >= required_increases
+    if len(df) < 3:
+        return np.nan
 
-# def live_mean_reversion_strategy(market_prices_df, lookback_short=4, lookback_long=25):
+    t = (df["sale_time"] - df["sale_time"].min()).dt.total_seconds().to_numpy().reshape(-1, 1)
+    p = df["sold_price"].to_numpy().reshape(-1, 1)
 
-#     # 1. Sort by time
-#     df_sorted = market_prices_df.sort_values('sale_time')
+    model = LinearRegression()
+    model.fit(t, p)
 
-#     latest_time = df_sorted['sale_time'].max()
-#     long_cutoff_time = latest_time - timedelta(hours=lookback_long)
-#     short_cutoff_time = latest_time - timedelta(hours=lookback_short)
-
-#     short_df = df_sorted[df_sorted['sale_time'] >= short_cutoff_time]
-#     long_df = df_sorted[df_sorted['sale_time'] >= long_cutoff_time]
-    
-#     # 2. Group by card_id
-
-#     short_mean_series = short_df.groupby('card_id')['sold_price'].mean()
-#     rolling_min_short_series = short_df.groupby('card_id')['sold_price'].min()
-#     rolling_max_short_series = short_df.groupby('card_id')['sold_price'].max()
-#     rolling_min_long_series = long_df.groupby('card_id')['sold_price'].min()
-#     long_mean_series = long_df.groupby('card_id')['sold_price'].mean()
-#     std_dev_series = long_df.groupby('card_id')['sold_price'].std()
-#     liquid_series = short_df.groupby('card_id')['sold_price'].count()
-
-#     valid_card_ids = short_mean_series.index.intersection(long_mean_series.index)
-#     latest_data = df_sorted.groupby('card_id').tail(1).copy()
-#     latest_data = latest_data[latest_data['card_id'].isin(valid_card_ids)].copy()
-
-    
-#     # 4. Flexible rebound detection
-
-    
-#     rebound_series = short_df.groupby('card_id')['sold_price'].apply(
-#         lambda x: calculate_rebound_flag(x, window=lookback_short)
-#     )
-    
-#     latest_data['short_mean'] = latest_data['card_id'].map(short_mean_series)
-#     latest_data['long_mean'] = latest_data['card_id'].map(long_mean_series)
-#     latest_data['std_dev'] = latest_data['card_id'].map(std_dev_series)
-#     latest_data['rebound_flag'] = latest_data['card_id'].map(rebound_series)
-#     latest_data['liquid'] = latest_data['card_id'].map(liquid_series)
-#     latest_data['average_price'] = latest_data['card_id'].map(short_mean_series)
-#     latest_data['rolling_min_short'] = latest_data['card_id'].map(rolling_min_short_series)
-#     latest_data['rolling_max_short'] = latest_data['card_id'].map(rolling_max_short_series)
-#     latest_data['rolling_min_long'] = latest_data['card_id'].map(rolling_min_long_series)
-#     latest_data['liquid'] = latest_data['card_id'].map(liquid_series)
-
-#     latest_data['rolling_min'] = latest_data[['rolling_min_short', 'rolling_min_long']].min(axis=1)
-    
-#     # Dynamic threshold (~2% above min, scaled with volatility)
-#     latest_data['near_min_threshold'] = latest_data['rolling_min'] * (
-#         1 + 0.02 * ((latest_data['rolling_max_short'] / latest_data['rolling_min'] + 1e-6) - 1)
-#     )
-    
-#     is_dip = latest_data['sold_price'] <= latest_data['near_min_threshold']
-#     is_rebound = latest_data['rebound_flag'] == True
-#     is_liquid = latest_data['liquid'] >= 3
-#     is_confirmed = latest_data['sold_price'] <= latest_data['average_price'] * 0.98
-#     # 8. Combine criteria
-#     meets_criteria = is_dip & is_rebound & is_liquid & is_confirmed
-    
-#     buy_signals = latest_data[meets_criteria].copy()
-
-#     buy_signals.loc[:, 'buy_price'] = buy_signals['sold_price'] 
-
-#     buy_signals['discount_%'] = (buy_signals['rolling_min_long'] - buy_signals['buy_price']) / buy_signals['rolling_min_long'] * 100
-
-#     final_df = pd.DataFrame(buy_signals)
-#     if final_df.empty:
-#         return final_df
-    
-#     return final_df[['card_id', 'name', 'buy_price', 'discount_%']]
+    # slope = price change per second → convert to per hour
+    return float(model.coef_[0][0] * 3600)
 
 
+def Deep_Dip_Buy_Volume_Confirm(
+    market_prices_df,
+    platform="pc",
+    short_window=4,
+    long_window=24,
+    dip_threshold=0.09,
+    min_history_hours=96,
+    confirm_window=1
+):
+    """
+    Detect buy signals for cards experiencing a controlled crash:
+      - price dropped significantly
+      - near recent low
+      - volume not exploding (panic)
+      - decent liquidity
+      - stable within last X hours
+    """
+    if market_prices_df.empty or len(market_prices_df) < 5:
+        return pd.DataFrame()
 
-Z_SCORE_BUY_THRESHOLD = -1.3
+    df_sorted = market_prices_df.sort_values("sale_time")
+    latest_time = df_sorted["sale_time"].max()
 
-def z_score_mean_reversion_strategy(market_prices_df, lookback_short=4, lookback_long=48):
-    df_sorted = market_prices_df.sort_values('sale_time')
-    df_sorted = df_sorted[
-        (df_sorted['version'].str.strip().str.lower() != "gold rare") &
-        (df_sorted['version'].notna())
-    ].copy()
+    num_unsold = (market_prices_df["was_sold"] == 0).sum()
+    print("Total unsold listings:", num_unsold)
 
-    latest_time = df_sorted['sale_time'].max()
+    # Time cutoffs
+    long_cutoff = latest_time - timedelta(hours=long_window)
+    short_cutoff = latest_time - timedelta(hours=short_window)
+    confirm_cutoff = latest_time - timedelta(hours=confirm_window)
+    min_history = timedelta(hours=min_history_hours)
 
-    long_cutoff_time = latest_time - timedelta(hours=lookback_long)
-    short_cutoff_time = latest_time - timedelta(hours=lookback_short)
+    sold_df = df_sorted[df_sorted["was_sold"] == 1]
 
-    short_df = df_sorted[df_sorted['sale_time'] >= short_cutoff_time]
-    long_df = df_sorted[df_sorted['sale_time'] >= long_cutoff_time]
+    long_df = sold_df[sold_df["sale_time"] >= long_cutoff]
+    short_df = sold_df[sold_df["sale_time"] >= short_cutoff]
+    confirm_df = sold_df[sold_df["sale_time"] >= confirm_cutoff]
 
+    # ------------------------------
+    # Aggregate statistics
+    # ------------------------------
+    long_mean = long_df.groupby("card_id")["sold_price"].mean()
+    short_low = short_df.groupby("card_id")["sold_price"].min()
+    long_volume = long_df.groupby("card_id")["sold_price"].count()
+    short_volume = short_df.groupby("card_id")["sold_price"].count()
+    first_sale_time = df_sorted.groupby("card_id")["sale_time"].min()
+    confirm_std = confirm_df.groupby("card_id")["sold_price"].std()
 
-    short_mean_series = short_df.groupby('card_id')['sold_price'].mean()
-    long_mean_series = long_df.groupby('card_id')['sold_price'].mean()
-    std_dev_series = long_df.groupby('card_id')['sold_price'].std()
-    liquid_series = short_df.groupby('card_id')['sold_price'].count()
+    latest_data = df_sorted.groupby("card_id").tail(1).copy()
 
-    valid_card_ids = short_mean_series.index.intersection(long_mean_series.index)
-    latest_data = df_sorted.groupby('card_id').tail(1).copy()
-    latest_data = latest_data[latest_data['card_id'].isin(valid_card_ids)].copy()
+    # Map metrics to latest rows
+    latest_data["long_mean"] = latest_data["card_id"].map(long_mean)
+    latest_data["short_low"] = latest_data["card_id"].map(short_low)
+    latest_data["short_volume"] = latest_data["card_id"].map(short_volume)
+    latest_data["first_sale_time"] = latest_data["card_id"].map(first_sale_time)
 
-    # Historical Data
+    latest_data["long_avg_hourly_volume"] = latest_data["card_id"].map(long_volume) / long_window
+    latest_data["short_avg_hourly_volume"] = latest_data["card_id"].map(short_volume) / short_window
+    latest_data["confirm_std"] = latest_data["card_id"].map(confirm_std)
 
-    rebound_series = short_df.groupby('card_id')['sold_price'].apply(
-        lambda x: calculate_rebound_flag(x, window=5)
+    # Fix invalids
+    latest_data["confirm_std"] = latest_data["confirm_std"].fillna(latest_data["long_mean"] * 0.03)
+    latest_data["long_mean"].replace(0, np.nan, inplace=True)
+    latest_data["short_avg_hourly_volume"].fillna(0, inplace=True)
+    latest_data["long_avg_hourly_volume"].replace(0, np.nan, inplace=True)
+
+    latest_data.dropna(subset=["long_mean"], inplace=True)
+
+    # -----------------------------------------
+    # Price-based indicators
+    # -----------------------------------------
+    current_price_col = f"current_{platform}_price"
+
+    latest_data["drop_pct"] = (
+        (latest_data["long_mean"] - latest_data[current_price_col])
+        / latest_data["long_mean"]
     )
 
-    epsilon = 1e-9
-    latest_data['short_mean'] = latest_data['card_id'].map(short_mean_series)
-    latest_data['long_mean'] = latest_data['card_id'].map(long_mean_series)
-    latest_data['std_dev'] = latest_data['card_id'].map(std_dev_series)
-    latest_data['rebound_flag'] = latest_data['card_id'].map(rebound_series)
-    latest_data['liquid'] = latest_data['card_id'].map(liquid_series)
+    latest_data["near_low_mask"] = (
+        latest_data[current_price_col] <= 1.05 * latest_data["short_low"]
+    )
 
-    latest_data['z_score'] = (latest_data['short_mean'] - latest_data['long_mean']) / (latest_data['std_dev'] + epsilon)
-    latest_data['z_score'] = latest_data['z_score'].fillna(999) 
-    latest_data['discount_pct'] = ((latest_data['long_mean'] - latest_data['short_mean']) / latest_data['long_mean'] * 100)
+    # -----------------------------------------
+    # Volume stability logic
+    # -----------------------------------------
+    high_price = latest_data[current_price_col] > 200000
 
+    latest_data["volume_stable_mask"] = np.where(
+        high_price,
+        latest_data["short_avg_hourly_volume"] <= 2.0 * latest_data["long_avg_hourly_volume"],
+        latest_data["short_avg_hourly_volume"] <= 1.25 * latest_data["long_avg_hourly_volume"]
+    )
+
+    latest_data["liquid_mask"] = np.where(
+        high_price,
+        latest_data["short_volume"] >= 2,
+        latest_data["short_volume"] >= 5
+    )
+
+    latest_data["history_mask"] = (
+        latest_time - latest_data["first_sale_time"] >= min_history
+    )
+
+    # -----------------------------------------
+    # Sell through rate
+    # -----------------------------------------
+    long_df_all = df_sorted[df_sorted["sale_time"] >= long_cutoff]
+    floor_min = long_df_all.groupby("card_id")["listed_price"].min()
+
+    floor_cutoff = 1.30 * floor_min
+    long_df_all = long_df_all.merge(floor_cutoff.rename("floor_cutoff"), on="card_id")
+
+    floor_df = long_df_all[long_df_all["listed_price"] <= long_df_all["floor_cutoff"]]
+
+    sold_count = floor_df[floor_df["was_sold"] == 1].groupby("card_id").size()
+    expired_count = floor_df[floor_df["was_sold"] == 0].groupby("card_id").size()
+
+    sell_through = sold_count / (sold_count + expired_count)
+    sell_through = sell_through.fillna(0)
+
+    latest_data["sell_through_rate"] = latest_data["card_id"].map(sell_through).fillna(0)
+
+    # -----------------------------------------
+    # Confirm no-new-lows check
+    # -----------------------------------------
+    confirm_min = confirm_df.groupby("card_id")["sold_price"].min()
+    latest_data["confirm_mask"] = (
+        latest_data[current_price_col] >= latest_data["card_id"].map(confirm_min)
+    )
+
+    # -----------------------------------------
+    # Price slope
+    # -----------------------------------------
+    price_slope = short_df.groupby("card_id").apply(compute_price_slope)
+    latest_data["price_slope"] = latest_data["card_id"].map(price_slope)
+
+    latest_data["slope_pct_per_hr"] = latest_data["price_slope"] / latest_data["long_mean"]
+
+    # -----------------------------------------
+    # Buy mask
+    # -----------------------------------------
+    buy_mask = (
+        (latest_data["drop_pct"] >= dip_threshold)
+        & latest_data["near_low_mask"]
+        & (latest_data["volume_stable_mask"] | latest_data["confirm_mask"])
+        & latest_data["liquid_mask"]
+        & latest_data["history_mask"]
+    )
+
+    # -----------------------------------------
+    # Scoring
+    # -----------------------------------------
+    latest_data["stability_score"] = 1 / (1 + (latest_data["confirm_std"] / latest_data["long_mean"]).fillna(1))
+    volume_ratio = (latest_data["short_avg_hourly_volume"] / latest_data["long_avg_hourly_volume"]).clip(0, 1).fillna(0)
+
+    latest_data["confidence"] = (
+        0.6 * latest_data["drop_pct"].fillna(0)
+        + 0.2 * latest_data["stability_score"].fillna(0)
+        + 0.1 * volume_ratio
+        + 0.1 * latest_data["sell_through_rate"]
+    )
+
+    latest_data["demand_status"] = pd.cut(
+        latest_data["sell_through_rate"],
+        bins=[0, 0.2, 0.4, 0.7, 1],
+        labels=["Dead", "Weak", "Healthy", "Hot"]
+    )
+
+    latest_data["price_status"] = pd.cut(
+        latest_data["slope_pct_per_hr"],
+        bins=[-np.inf, -0.02, -0.01, 0.0, 0.01, np.inf],
+        labels=["Crashing", "Deep Dip", "Dipping", "Stable", "Rising"]
+    )
+
+    # -----------------------------------------
+    # Final selection
+    # -----------------------------------------
+    signals = latest_data[buy_mask].copy()
+    signals["buy_price"] = signals[current_price_col]
+
+    return signals.sort_values("confidence", ascending=False)
+
+
+
+
+
+# ------------------- MARKET HEALTH ----------------
+
+# --- GLOBAL PARAMETERS ---
+LIVE_INTERVAL_MINUTES = 30
+CRASH_ZSCORE_THRESHOLD = -2.0 
+ROLLING_WINDOW_BINS = 20 
+MIN_VOLUME_THRESHOLD_FALLBACK = 800
+MIN_PARTICIPATION_THRESHOLD_FALLBACK = 150
+HISTORICAL_DAYS = 7
+
+
+# --- PREPROCESSING ---
+def preprocess_sales_data(sales_df):
+    """Prepares sales data and extracts the last two complete time bins."""
+    if sales_df.empty:
+        return None, None, None, None
+
+    end_time = sales_df['sale_time'].max()
+    start_time = end_time - timedelta(days=HISTORICAL_DAYS)
+    sales_df = sales_df[(sales_df['sale_time'] >= start_time)].copy()
+
+    sales_df = sales_df.sort_values('sale_time').copy()
+    sales_df['time_bin'] = sales_df['sale_time'].dt.floor(f'{LIVE_INTERVAL_MINUTES}min')
+
+    all_bins = sales_df['time_bin'].unique()
     
-
-
-    z_score_mask = latest_data['z_score'] <= Z_SCORE_BUY_THRESHOLD
-    liquid_mask = latest_data['liquid'] >= 2
-
-    final_buy_mask = z_score_mask & liquid_mask 
-
-    # Select the final list of potential buys
-    latest_data['score'] = latest_data['discount_pct'] / 100 - latest_data['z_score']
-    final_candidates = latest_data[final_buy_mask].sort_values('score', ascending=False)
-
-    final_candidates['buy_price'] = final_candidates['short_mean']
-    signal_cutoff = latest_time - timedelta(hours=2)
-    final_candidates = final_candidates[final_candidates['sale_time'] >= signal_cutoff]
-    return final_candidates
-
-
-
-
-
-# -------------------------------
-# SHORT_HOURS = 4
-# LONG_HOURS = 12
-# SHORT_TRADES = 20
-# LONG_TRADES = 60
-# MIN_SHORT_SALES = 15
-# MIN_LONG_SALES = 50
-
-# def drop_strategy(market_prices_df):
-#     df = market_prices_df.sort_values("sale_time")
-
-#     cutoff_short = df['sale_time'].max() - pd.Timedelta(hours=SHORT_HOURS)
-#     cutoff_long = df['sale_time'].max() - pd.Timedelta(hours=LONG_HOURS)
-
-#     short_df = df[
-#         (df['sale_time'] > cutoff_short) &
-#         (df['sold_price'] > 0) 
-#     ]
-
-#     long_df = df[
-#         (df['sale_time'] > cutoff_long) &
-#         (df['sold_price'] > 0) 
-#     ]
-
-#     buy_candidates = []
-
-#     for card_id, group in short_df.groupby('card_id'):
-#         group = group.sort_values('sale_time', ascending=False)
-
-#         if len(group) >= MIN_SHORT_SALES:
-#             # Short-term avg
-#             last_short_avg = group.head(SHORT_TRADES)['sold_price'].mean()
-
-#             # Long-term avg
-#             long_group = long_df[long_df['card_id'] == card_id].sort_values('sale_time', ascending=False)
-#             if len(long_group) < MIN_LONG_SALES:
-#                 continue
-
-#             last_long_avg = long_group.head(LONG_TRADES)['sold_price'].mean()
-#             sales_volume = len(long_group)
-
-#             # Calculate drop %
-#             drop_pct = (last_long_avg - last_short_avg) / last_long_avg * 100
-#             if last_short_avg < 5000:  # skip unusable cards
-#                 continue
-
-#             # Suggested prices
-#             buy_price = round(last_short_avg * 0.97)   # buy a bit below short avg
-#             raw_sell_price = round(last_long_avg * 0.98)  # sell a bit below long avg
-
-#             # Apply EA 5% tax
-#             sell_price_after_tax = int(raw_sell_price * 0.95)
-
-#             potential_profit = sell_price_after_tax - buy_price
-#             profit_margin_pct = (potential_profit / buy_price) * 100
-
-#             if profit_margin_pct < 3:
-#                 continue
-
-#             buy_candidates.append({
-#                 "card_id": card_id,
-#                 "name": group.iloc[0]["name"],
-#                 "version": group.iloc[0]["version"],
-#                 "last_short_avg": round(last_short_avg, 2),
-#                 "last_long_avg": round(last_long_avg, 2),
-#                 "discount_%": round(drop_pct, 2),
-#                 "sales_volume": sales_volume,
-#                 "buy_price": buy_price,
-#                 "suggested_sell_raw": raw_sell_price,   # before tax
-#                 "suggested_sell_after_tax": sell_price_after_tax,
-#                 "potential_profit": potential_profit,
-#                 "profit_margin_%": round(profit_margin_pct, 2),
-#             })
-
-#     final_df = pd.DataFrame(buy_candidates)
-#     if final_df.empty:
-#         return final_df
-    
-#     return final_df[['card_id', 'name', 'buy_price', 'discount_%']]
-
+    if len(all_bins) < 3:
+        return sales_df, None, None, None
         
+    # [-3] is the previous full bin, [-2] is the current latest full bin ([-1] is typically incomplete)
+    previous_full_bin, current_full_bin = all_bins[-3], all_bins[-2]
+    
+    return sales_df, previous_full_bin, current_full_bin, all_bins
+
+def calculate_market_index_and_velocity(sales_df):
+    """
+    Computes market index (volume-weighted average), velocity (log returns), 
+    and Z-score for the latest completed time bin.
+    """
+    sales_df_processed, prev_bin, curr_bin, all_bins = preprocess_sales_data(sales_df)
+    
+    if sales_df_processed is None or curr_bin is None or len(all_bins) < 2: 
+        return None, None, None, None 
+
+    def _calculate_robust_weighted_average(x):
+        """Calculates a robust weighted average, weighting by price itself."""
+        prices = x['sold_price']
+        weights = x['sold_price'] 
+        
+        if weights.sum() == 0:
+            return np.nan 
+        
+        return np.average(prices, weights=weights)
+
+    # 1. Calculate Volume-Weighted Market Index for ALL historical bins (7 days)
+    full_market_index = (sales_df_processed.groupby('time_bin')
+                         .apply(_calculate_robust_weighted_average)
+                         .dropna()) # Drop bins with no valid trades
+
+    # 2. Compute log returns (velocity) for ALL valid bins
+    velocities = np.log(full_market_index / full_market_index.shift(1)) * 100
+    velocities = velocities.dropna()
+    
+    if len(velocities) < 2:
+        return None, None, None, None
+
+    # Use the second to last index/velocity as the "latest" full one
+    latest_velocity = velocities.iloc[-1]
+    latest_index = full_market_index.iloc[-1]
+    
+    # Check for enough velocity data for stable Z-score calculations
+    if len(velocities) < ROLLING_WINDOW_BINS:
+         # Use the latest velocity but z_velocity is 0 (unreliable)
+         z_velocity = 0
+         smoothed_velocity = latest_velocity
+    else:
+        # 3. Smooth velocity using rolling window
+        smoothed_velocity = velocities.rolling(window=ROLLING_WINDOW_BINS, min_periods=2).mean().iloc[-1]
+        
+        # 4. Z-score normalization for adaptive detection (using ALL historical velocities)
+        z_velocity = (latest_velocity - velocities.mean()) / velocities.std()
+
+    return latest_index, smoothed_velocity, z_velocity, curr_bin
+
+
+def calculate_volume_and_participation(sales_df):
+    """Returns adaptive thresholds and latest volume/participation metrics."""
+    sales_df_processed, prev_bin, curr_bin, all_bins = preprocess_sales_data(sales_df)
+    if sales_df_processed is None or curr_bin is None:
+        return 0, 0, MIN_VOLUME_THRESHOLD_FALLBACK, MIN_PARTICIPATION_THRESHOLD_FALLBACK
+
+    # Adaptive baselines from full 7-day history
+    avg_volume = sales_df_processed.groupby('time_bin').size().mean()
+    avg_participation = sales_df_processed.groupby('time_bin')['card_id'].nunique().mean()
+
+    # Thresholds are 60% of the historical average for the given interval
+    min_volume = int(avg_volume * 0.6)
+    min_participation = int(avg_participation * 0.6)
+
+    # Metrics for latest bin
+    latest_data = sales_df_processed[sales_df_processed['time_bin'] == curr_bin]
+    total_volume = latest_data.shape[0]
+    unique_cards = latest_data['card_id'].nunique()
+
+    return total_volume, unique_cards, min_volume, min_participation
+
+
+# --- MAIN CRASH DETECTION ---
+def check_for_live_crash_signal(sales_df):
+    """Evaluates the latest 30-min market window for crash conditions."""
+    latest_index, smoothed_velocity, z_velocity, latest_bin = calculate_market_index_and_velocity(sales_df)
+    
+    if latest_index is None or latest_bin is None:
+        return {"status": "NO_DATA", "report": "Not enough data to detect crash (requires two full 30-min bins)."}
+
+    total_volume, unique_cards, min_vol, min_part = calculate_volume_and_participation(sales_df)
+
+    # Use Z-score for crash condition check
+    is_price_crashing = (z_velocity < CRASH_ZSCORE_THRESHOLD)
+    
+    # Use Adaptive thresholds for validation
+    is_volume_valid = (total_volume > min_vol)
+    is_participation_valid = (unique_cards > min_part)
+
+    latest_time_str = latest_bin.strftime('%H:%M:%S UTC')
+
+    # --- REPORT LOGIC ---
+    report = [
+        f"--- Live Market Check (Time: {latest_time_str}) ---",
+        f"History Used: {HISTORICAL_DAYS} Days | Interval: {LIVE_INTERVAL_MINUTES} min",
+        f"Threshold: Z < {CRASH_ZSCORE_THRESHOLD}",
+        f"Velocity (smoothed): {smoothed_velocity:.2f}% | **Z-Score: {z_velocity:.2f}**",
+        f"Volume: {total_volume:,.0f} (min {min_vol:,.0f}) | Unique Cards: {unique_cards:,.0f} (min {min_part:,.0f})"
+    ]
+
+    # --- SIGNAL CLASSIFICATION ---
+    if is_price_crashing and is_volume_valid and is_participation_valid:
+        report.append("🚨 **VALIDATED CRASH SIGNAL** — High volume & widespread panic. **PANIC FLUSH**")
+        status = "CRASH_CONFIRMED"
+
+    elif is_price_crashing and (is_volume_valid or is_participation_valid):
+        report.append("⚠️ **FOCUSED CRASH/VOLATILITY** — Drop confirmed by *some* activity, but not both metrics.")
+        status = "CRASH_LOCALIZED"
+
+    elif is_price_crashing and not is_volume_valid and not is_participation_valid:
+        report.append("📉 **LOW-LIQUIDITY VOLATILITY** — Sharp move, but volume is too weak. **ILLIQUID FALL** (Avoid!)")
+        status = "VOLATILITY_ONLY"
+
+    else:
+        report.append("✅ **Market Stable or Recovering.**")
+        status = "STABLE"
+
+    return {
+        "status": status,
+        "velocity": smoothed_velocity,
+        "z_velocity": z_velocity,
+        "volume": total_volume,
+        "unique_cards": unique_cards,
+        "report": "\n".join(report)
+    }
 
 
 # ------------------- BOT RUNNER -------------------
 
-if __name__ == "__main__":
-    async def main():
-        await bot.start(BOT_TOKEN)  # bot deletes messages in on_ready, then closes
 
-    # Run Discord bot to clear messages first
-    asyncio.run(main())
-    engine = create_engine(
-        DB_URL,
-        pool_recycle=280,
-        pool_pre_ping=True
+async def run_bot_cleanup():
+    """Runs the bot to execute the cleanup event, then closes."""
+    try:
+        await bot.start(BOT_TOKEN)
+    except discord.errors.LoginFailure:
+        print("❌ Discord Login Failure. Check BOT_TOKEN.")
+    except Exception as e:
+        print(f"❌ An error occurred during bot cleanup: {e}")
+    finally:
+        await bot.close()  # ensures aiohttp session closes cleanly
+
+
+async def run_deal_notifications():
+    """The main execution flow: cleanup, then database connection and strategy run."""
+    
+    # 1. Run bot to delete messages (this runs asynchronously and then closes)
+    await run_bot_cleanup()
+
+    # 2. Run strategies after bot cleanup
+    if not DB_URL:
+        print("❌ DB_URL environment variable is not set. Cannot connect to database.")
+        return
+
+    try:
+        # Improved DB engine configuration for connection pooling
+        engine = create_engine(
+            DB_URL, 
+            pool_recycle=3600, # Reconnect once per hour
+            pool_pre_ping=True, 
+            pool_size=5, 
+            max_overflow=10
         )
+        with engine.connect() as conn:
+            print("\nSuccessfully connected to database. Running strategy...")
+            strategy_discord_notify(conn, Deep_Dip_Buy_Volume_Confirm)
+        engine.dispose()
+        print("\n--- Script run complete. ---")
+    
 
-    # Then run market strategies after the bot is done
-    with engine.connect() as conn:
-        # strategy_discord_notify(conn, drop_strategy, 'drop')
-        # strategy_discord_notify(conn, live_mean_reversion_strategy, 'live_mean')
-        strategy_discord_notify(conn, z_score_mean_reversion_strategy, 'zscore')
+    except Exception as e:
+        send_discord_message(f"🚨 **TRADER ERROR** 🚨\nDatabase or execution failed: {type(e).__name__}: {str(e)}")
+        print(f"❌ Database connection or strategy execution failed: {e}")
+
+        
+

@@ -21,10 +21,25 @@ def initcardTable():
     conn = get_connection()
     cur = conn.cursor()
 
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sales_platform_time ON market_sales(platform, sale_time);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sales_card_id ON market_sales(card_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_meta_card_id ON meta_cards(card_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_cards_card_id ON cards(card_id);")
+
+
+    # scraped_hrefs table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS meta_cards (
+            card_id INT PRIMARY KEY,
+            href VARCHAR(255),
+            FOREIGN KEY (card_id) REFERENCES cards(card_id)
+        )
+    """)
+
     # scraped_hrefs table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS hrefs (
-            card_id INT AUTO_INCREMENT PRIMARY KEY,
+            card_id INT PRIMARY KEY,
             href VARCHAR(255),
             version VARCHAR(20)
         )
@@ -33,7 +48,7 @@ def initcardTable():
     # cards table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cards (
-            card_id INT AUTO_INCREMENT PRIMARY KEY,
+            card_id INT PRIMARY KEY,
             name VARCHAR(50) NOT NULL,
             game INT,
             version VARCHAR(20),
@@ -45,7 +60,9 @@ def initcardTable():
             weak_foot INT,
             skill_move INT,
             height INT,
-            accelerate VARCHAR(20)
+            accelerate VARCHAR(20),
+            current_pc_price INT DEFAULT NULL,
+            current_ps_price INT DEFAULT NULL
         )
     """)
 
@@ -175,6 +192,7 @@ def initcardTable():
         )
     """)
 
+
     # recurring_events
     cur.execute("""
         CREATE TABLE IF NOT EXISTS recurring_events (
@@ -202,6 +220,95 @@ def initcardTable():
     cur.close()
     conn.close()
 
+def update_meta_cards():
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            # Clear existing meta cards to refresh with the latest
+            cur.execute("DELETE FROM meta_cards")
+
+            # Insert all eligible cards as meta cards
+            cur.execute("""
+                INSERT INTO meta_cards (card_id, href)
+                SELECT c.card_id, h.href
+                FROM cards c
+                JOIN hrefs h ON c.card_id = h.card_id
+                WHERE c.current_pc_price > 25000
+            """)
+
+        conn.commit()
+        print("✅ Meta cards updated successfully.")
+    finally:
+        conn.close()
+
+def insert_batch_sales(sales_list):
+    """
+    Insert multiple players' sales into the DB in one query,
+    skipping any older sales already in the DB.
+    sales_list: list of dicts, each dict has card_id, platform, listed_price, sale_type, sale_time, sold_price
+    """
+    if not sales_list:
+        return
+
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            # Build a dict of latest sale_time per card_id + platform
+            card_platforms = {}
+            card_ids = set(sale["card_id"] for sale in sales_list)
+
+            # Fetch current max sale_time for all involved card_ids
+            cur.execute(
+                "SELECT card_id, platform, MAX(sale_time) AS max_time "
+                "FROM market_sales WHERE card_id IN %s GROUP BY card_id, platform",
+                (tuple(card_ids),)
+            )
+
+            adelaide = pytz.timezone("Australia/Adelaide")
+            for row in cur.fetchall():
+                t = row['max_time']
+                if t:
+                    if t.tzinfo is None:
+                        t = adelaide.localize(t)
+                    card_platforms[(row['card_id'], row['platform'].lower())] = t
+
+            # Filter out old sales
+            values = []
+            for sale in sales_list:
+                key = (sale['card_id'], sale['platform'].lower())
+                sale_time = sale['sale_time']
+                if isinstance(sale_time, str):
+                    sale_time = parser.isoparse(sale_time)
+                if sale_time.tzinfo is None:
+                    sale_time = adelaide.localize(sale_time)
+
+                if key in card_platforms and sale_time <= card_platforms[key]:
+                    continue  # skip old sale
+
+                values.append((
+                    sale['card_id'],
+                    sale['platform'],
+                    sale['listed_price'],
+                    sale['sale_type'],
+                    sale_time,
+                    sale['sold_price']
+                ))
+
+            if values:
+                sql = """
+                INSERT INTO market_sales
+                (card_id, platform, listed_price, sale_type, sale_time, sold_price)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                cur.executemany(sql, values)
+                conn.commit()
+    finally:
+        conn.close()
+
+
+async def async_insert_batch_sales(sales_list):
+    await asyncio.to_thread(insert_batch_sales, sales_list)
+
 
 
 def insert_sale_db(card_id, sale_data):
@@ -213,11 +320,11 @@ def insert_sale_db(card_id, sale_data):
                 "SELECT platform, MAX(sale_time) as max_time FROM market_sales WHERE card_id = %s GROUP BY platform",
                 (card_id,)
             )
+
             adelaide = pytz.timezone("Australia/Adelaide")
             max_times = {}
             for row in cur.fetchall():
                 if row['max_time']:
-                    # ensure max_time is timezone aware
                     if row['max_time'].tzinfo is None:
                         max_times[row['platform'].lower()] = adelaide.localize(row['max_time'])
                     else:
@@ -228,15 +335,12 @@ def insert_sale_db(card_id, sale_data):
                 platform = point['platform'].lower()
                 sale_time = point['sale_time']
 
-                # Convert string to datetime if needed
                 if isinstance(sale_time, str):
                     sale_time = parser.isoparse(sale_time)
 
-                # Localize naive datetimes
                 if sale_time.tzinfo is None:
                     sale_time = adelaide.localize(sale_time)
 
-                # Skip older/duplicate entries
                 if platform in max_times and sale_time <= max_times[platform]:
                     continue
 
@@ -249,6 +353,7 @@ def insert_sale_db(card_id, sale_data):
                     point['sold_price']
                 ))
 
+            # --- Insert all new sales ---
             if values:
                 sql = """
                 INSERT INTO market_sales (card_id, platform, listed_price, sale_type, sale_time, sold_price)
@@ -257,8 +362,10 @@ def insert_sale_db(card_id, sale_data):
                 cur.executemany(sql, values)
 
         conn.commit()
+
     finally:
         conn.close()
+
 
 
 async def async_insert_sale_db(card_id, sale_data):
@@ -306,16 +413,24 @@ def insert_card(card_id, card_details, game_num):
     finally:
         conn.close()
 
-
 def insert_card_playstyles(card_id, playstyles_list):
+    if not playstyles_list:
+        return
+
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            # Ensure card exists in `cards` (avoid FK constraint errors)
+            cur.execute("SELECT 1 FROM cards WHERE card_id = %s LIMIT 1", (card_id,))
+            if not cur.fetchone():
+                print(f"⚠️ Skipping playstyles: card {card_id} not found in `cards`.")
+                return
+
             for ps in playstyles_list:
                 cur.execute("""
                     INSERT INTO card_playstyles (card_id, playstyle, plus)
                     VALUES (%s, %s, %s)
-                    ON DUPLICATE KEY UPDATE plus=VALUES(plus);
+                    ON DUPLICATE KEY UPDATE plus = VALUES(plus)
                 """, (
                     card_id,
                     ps.get("playstyle"),
@@ -326,20 +441,20 @@ def insert_card_playstyles(card_id, playstyles_list):
         conn.close()
 
 
+
 def insert_card_roles(card_id, roles):
-    """
-    Insert or update card roles.
-    roles: list of dicts with keys: position, role, plus
-    """
     if not roles:
         return
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM cards WHERE card_id = %s LIMIT 1", (card_id,))
+            if not cur.fetchone():
+                print(f"⚠️ Skipping roles: card {card_id} not found in `cards`.")
+                return
+
             for r in roles:
-                # MySQL ON DUPLICATE KEY requires a UNIQUE constraint
-                # Assuming (card_id, position, role) is UNIQUE
                 cur.execute("""
                     INSERT INTO card_roles (card_id, position, role, plus)
                     VALUES (%s, %s, %s, %s)
@@ -355,17 +470,19 @@ def insert_card_roles(card_id, roles):
         conn.close()
 
 
+
 def insert_card_stats(card_id, stats_list):
-    """
-    Insert or update card stats for each category.
-    stats_list: dict with keys like 'pace', 'shooting', etc., each containing a dict of substats
-    """
     if not stats_list:
         return
 
     conn = get_connection()
     try:
         with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM cards WHERE card_id = %s LIMIT 1", (card_id,))
+            if not cur.fetchone():
+                print(f"⚠️ Skipping stats: card {card_id} not found in `cards`.")
+                return
+
             stats_table_mapping = {
                 "card_pace_stats": "pace",
                 "card_shooting_stats": "shooting",
@@ -383,7 +500,6 @@ def insert_card_stats(card_id, stats_list):
                 columns = list(substats.keys())
                 values = list(substats.values())
 
-                # Build MySQL INSERT ... ON DUPLICATE KEY UPDATE dynamically
                 all_columns = ["card_id"] + columns
                 placeholders = ", ".join(["%s"] * len(all_columns))
                 update_clause = ", ".join([f"{col}=VALUES({col})" for col in columns])
@@ -393,12 +509,12 @@ def insert_card_stats(card_id, stats_list):
                     VALUES ({placeholders})
                     ON DUPLICATE KEY UPDATE {update_clause}
                 """
-
                 cur.execute(sql, [card_id] + values)
 
         conn.commit()
     finally:
         conn.close()
+
 
 
 
