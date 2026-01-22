@@ -11,7 +11,6 @@
     - [Features](#features)
     - [Database Structure](#database-structure)
   - [**Feature Engineering**](#feature-engineering)
-  - [**ML Model Training**](#ml-model-training)
   - [**Strategy Design**](#strategy-design)
   - [**Backtesting \& Simulation**](#backtesting--simulation)
   - [**Live Execution**](#live-execution)
