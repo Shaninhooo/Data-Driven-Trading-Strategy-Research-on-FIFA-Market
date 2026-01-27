@@ -75,7 +75,6 @@ Database tables:
 Scatter Plot of 82 Rated Player Prices
 ![82Players](png/82_prices.png)
 
-## **ML Model Training**
 ## **Strategy Design**
 ## **Backtesting & Simulation**
 ## **Live Execution**
