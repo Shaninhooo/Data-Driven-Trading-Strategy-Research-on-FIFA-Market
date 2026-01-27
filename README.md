@@ -1,5 +1,5 @@
 
-# **Data-Driven Trading Strategy Research on FIFA Market**
+# **FIFA Market Trade Signaller**
 
 ## Table of Contents
 
