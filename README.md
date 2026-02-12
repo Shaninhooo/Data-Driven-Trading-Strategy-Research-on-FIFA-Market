@@ -3,7 +3,7 @@
 
 ## Table of Contents
 
-- [**Data-Driven Trading Strategy Research on FIFA Market**](#data-driven-trading-strategy-research-on-fifa-market)
+- [**FIFA Market Trade Signaller**](#fifa-market-trade-signaller)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
   - [**Data Scraping**](#data-scraping)
@@ -11,13 +11,11 @@
     - [Features](#features)
     - [Database Structure](#database-structure)
   - [**Feature Engineering**](#feature-engineering)
-  - [**Strategy Design**](#strategy-design)
   - [**Backtesting \& Simulation**](#backtesting--simulation)
   - [**Live Execution**](#live-execution)
+  - [**Results**](#results)
   - [Setup](#setup)
   - [Usage](#usage)
-  - [Contributing](#contributing)
-  - [License](#license)
 
 ---
 
@@ -81,6 +79,10 @@ Scatter Plot of 82 Rated Player Prices
 Implemented a discord bot for live deal alerts to compliment the trading strategies from live data
 
 ## **Results**
+
+**Total Net Profit: 1,582,737**
+
+![Diagram](png/chart.png)
 
 **Documentation of Trades and Total Profit**: [Trade Ledger Spreadsheet Link](https://docs.google.com/spreadsheets/d/1wrAjUHWVwrRjr-Hd_Yj75sg2hcsOeqs5ec1GAWO6luA/edit?usp=sharing)
 
