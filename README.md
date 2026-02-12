@@ -82,8 +82,8 @@ Implemented a discord bot for live deal alerts to compliment the trading strateg
 
 ## **Results**
 
-**Documentation of Trades and Total Profit**
-[Link Text](https://docs.google.com/spreadsheets/d/1wrAjUHWVwrRjr-Hd_Yj75sg2hcsOeqs5ec1GAWO6luA/edit?usp=sharing)
+**Documentation of Trades and Total Profit**: [Trade Ledger Spreadsheet Link](https://docs.google.com/spreadsheets/d/1wrAjUHWVwrRjr-Hd_Yj75sg2hcsOeqs5ec1GAWO6luA/edit?usp=sharing)
+
 
 ## Setup
 
