@@ -23,9 +23,7 @@
 
 ## Overview
 
-Briefly describe your project:
-
-> This project collects and analyzes FIFA Ultimate Team (FUT) player market data to research and test trading strategies. It stores player stats, prices, playstyles, and historical trends in a PostgreSQL database.
+This project collects and analyzes FIFA Ultimate Team (FUT) player market data to research and test trading strategies. It stores player stats, prices, playstyles, and historical trends in a PostgreSQL database.
 
 ## **Data Scraping**
 
@@ -75,7 +73,6 @@ Database tables:
 Scatter Plot of 82 Rated Player Prices
 ![82Players](png/82_prices.png)
 
-## **Strategy Design**
 ## **Backtesting & Simulation**
 ## **Live Execution**
 
@@ -83,6 +80,10 @@ Scatter Plot of 82 Rated Player Prices
 
 Implemented a discord bot for live deal alerts to compliment the trading strategies from live data
 
+## **Results**
+
+**Documentation of Trades and Total Profit**
+[Link Text](https://docs.google.com/spreadsheets/d/1wrAjUHWVwrRjr-Hd_Yj75sg2hcsOeqs5ec1GAWO6luA/edit?usp=sharing)
 
 ## Setup
 
